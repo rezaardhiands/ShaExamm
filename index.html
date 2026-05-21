@@ -30,18 +30,31 @@
         let usernameLogin = "";
 
         // FUNGSI LOGIN
-        function login() {
+       function login() {
             let u = document.getElementById('u').value;
             let p = document.getElementById('p').value;
             const btn = document.querySelector('#loginPage button');
+            
+            if(u === "" || p === "") { 
+                alert("Isi Username & Password!"); 
+                return; 
+            }
+
             btn.innerText = "Memproses...";
             btn.disabled = true;
 
             fetch(API_URL, {
                 method: "POST",
+                headers: {
+                    // Ini kunci utamanya untuk bypass blokir CORS dari Google
+                    "Content-Type": "text/plain;charset=utf-8"
+                },
                 body: JSON.stringify({ type: "login", username: u, password: p })
             })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error("Gagal terhubung ke server GAS");
+                return res.json();
+            })
             .then(res => {
                 btn.innerText = "MASUK";
                 btn.disabled = false;
@@ -56,7 +69,8 @@
             .catch(err => {
                 btn.innerText = "MASUK";
                 btn.disabled = false;
-                alert("Error: Tidak dapat terhubung ke server.");
+                alert("Error: Tidak dapat terhubung ke server. Pastikan URL Web App benar.");
+                console.error("Detail Error:", err);
             });
         }
 

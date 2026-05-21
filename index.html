@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Ujian Siswa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .page { display: none; }
+        .page.active { display: block; }
+        .opsi-container { cursor: pointer; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 10px; transition: 0.3s; }
+        .opsi-container:hover { background: #f8f9fa; }
+        .selected { background: #d1e7dd; border-color: #0f5132; }
+    </style>
+</head>
+<body class="bg-light">
+
+    <script>const API_URL = "https://script.google.com/macros/s/AKfycbx79KoPf2FJq9VI2ofk5FJLLr2FuLuJMmcII6sbS3UF4Xt9h_Apob63WNIv4prw80N1/exec";</script>
+
+    <div id="loginPage" class="page active container mt-5">
+        <div class="card p-4 mx-auto" style="max-width: 400px;">
+            <h4 class="text-center">Login Siswa</h4>
+            <input id="u" class="form-control mb-2" placeholder="Username">
+            <input id="p" class="form-control mb-2" type="password" placeholder="Password">
+            <button class="btn btn-primary w-100" onclick="login()">MASUK</button>
+        </div>
+    </div>
+
+    <script>
+        let usernameLogin = "";
+
+        // FUNGSI LOGIN
+        function login() {
+            let u = document.getElementById('u').value;
+            let p = document.getElementById('p').value;
+            const btn = document.querySelector('#loginPage button');
+            btn.innerText = "Memproses...";
+            btn.disabled = true;
+
+            fetch(API_URL, {
+                method: "POST",
+                body: JSON.stringify({ type: "login", username: u, password: p })
+            })
+            .then(res => res.json())
+            .then(res => {
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                if(res.status === "success") {
+                    usernameLogin = u;
+                    alert("Berhasil Login! Selamat mengerjakan.");
+                    // Tambahkan logika pindah ke halaman ujian di sini
+                } else {
+                    alert("Login Gagal: Username/Password salah.");
+                }
+            })
+            .catch(err => {
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                alert("Error: Tidak dapat terhubung ke server.");
+            });
+        }
+
+        // --- CHEAT DETECTOR ---
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden && usernameLogin !== "") {
+                alert("PELANGGARAN: Anda terdeteksi keluar dari halaman ujian!");
+                // Kirim log tanpa menunggu balasan (no-cors)
+                fetch(API_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    body: JSON.stringify({ type: "log", username: usernameLogin, pelanggaran: "Keluar Tab" })
+                });
+            }
+        });
+
+        // Mencegah Copy, Paste, Klik Kanan
+        document.addEventListener("copy", (e) => e.preventDefault());
+        document.addEventListener("cut", (e) => e.preventDefault());
+        document.addEventListener("paste", (e) => e.preventDefault());
+        document.addEventListener("contextmenu", (e) => e.preventDefault());
+    </script>
+</body>
+</html>

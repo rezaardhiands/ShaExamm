@@ -8,255 +8,133 @@
     <style>
         .page { display: none; }
         .page.active { display: block; }
-        .card-soal { background: #fff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .opsi-container { cursor: pointer; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 10px; transition: 0.3s; }
         .opsi-container:hover { background: #f8f9fa; }
-        .selected { background: #d1e7dd !important; border-color: #0f5132 !important; }
-        .img-fluid { max-height: 250px; object-fit: contain; display: block; }
+        .selected { background: #d1e7dd; border-color: #0f5132; }
     </style>
 </head>
 <body class="bg-light">
 
-    <div id="msgContainer" class="fixed-top p-3" style="z-index: 1050;">
-        <div id="alertBox" class="alert alert-success d-none" role="alert">
-            <span id="msgText"></span>
-        </div>
-    </div>
+    <script>const API_URL = "https://script.google.com/macros/s/AKfycbx79KoPf2FJq9VI2ofk5FJLLr2FuLuJMmcII6sbS3UF4Xt9h_Apob63WNIv4prw80N1/exec";</script>
 
     <div id="loginPage" class="page active container mt-5">
         <div class="card p-4 mx-auto" style="max-width: 400px;">
-            <h4 class="text-center mb-3">Login Siswa</h4>
+            <h4 class="text-center">Login Siswa</h4>
             <input id="u" class="form-control mb-2" placeholder="Username">
             <input id="p" class="form-control mb-2" type="password" placeholder="Password">
-            <button id="btnLogin" class="btn btn-primary w-100" onclick="login()">MASUK</button>
-        </div>
-    </div>
-
-    <div id="pilihPage" class="page container mt-5">
-        <div class="card p-4 mx-auto" style="max-width: 400px;">
-            <h4>Pilih Ujian</h4>
-            <label class="small text-muted">Pilih Kelas:</label>
-            <select id="pilihKelas" class="form-select mb-2">
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9</option>
-            </select>
-            <label class="small text-muted">Pilih Mapel:</label>
-            <select id="pilihMapel" class="form-select mb-2">
-                <option value="IPA">IPA</option>
-                <option value="IPS">IPS</option>
-                <option value="MATEMATIKA">MATEMATIKA</option>
-            </select>
-            <label class="small text-muted">Token Ujian (Jika ada):</label>
-            <input id="inputToken" class="form-control mb-3" placeholder="Token Ujian">
-            <button id="btnMulai" class="btn btn-success w-100" onclick="mulaiUjian()">MULAI UJIAN</button>
-        </div>
-    </div>
-
-    <div id="ujianPage" class="page container mt-4">
-        <div class="card-soal">
-            <p id="nomer-soal" class="fw-bold"></p>
-            <p id="pertanyaanText"></p>
-            <div id="opsiBox"></div>
-        </div>
-        <div class="d-flex justify-content-between mt-3 mb-5">
-            <button class="btn btn-secondary" onclick="navSoal(-1)">Prev</button>
-            <button id="btnNext" class="btn btn-primary" onclick="navSoal(1)">Next</button>
-            <button id="btnSelesai" class="btn btn-danger" style="display:none;" onclick="konfirmasiSelesai()">SELESAI</button>
+            <button class="btn btn-primary w-100" onclick="login()">MASUK</button>
         </div>
     </div>
 
     <script>
-        // =========================================================================
-        // PENTING: TEMPEL URL WEB APP HASIL RE-DEPLOY ANDA DI SINI
-        // =========================================================================
-        const DEPLOY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx79KoPf2FJq9VI2ofk5FJLLr2FuLuJMmcII6sbS3UF4Xt9h_Apob63WNIv4prw80N1/exec"; 
+        let usernameLogin = "";
 
-        let currentIdx = 0, bankSoal = [], usernameLogin = "", passwordLogin = "";
-        let cheatCount = 0; 
-        const maxViolations = 3;
-
-        function aktifkanCheatDetector() {
-            document.addEventListener("visibilitychange", function() {
-                if (document.hidden) { handleViolation("Membuka tab baru/Keluar aplikasi!"); }
-            });
-            window.addEventListener("blur", function() {
-                handleViolation("Membuka panel atas/Kehilangan fokus layar!");
-            });
-        }
-
-        function handleViolation(reason) {
-            if(document.getElementById('ujianPage').classList.contains('active')) {
-                cheatCount++;
-                alert(`⚠️ PERINGATAN [${cheatCount}/${maxViolations}]:\nDilarang ${reason}`);
-                if (cheatCount >= maxViolations) {
-                    alert("🚨 Batas pelanggaran habis! Jawaban Anda langsung dikirim ke server.");
-                    kirimKeServerOtomatis();
-                }
+        // FUNGSI LOGIN
+       function login() {
+            let u = document.getElementById('u').value;
+            let p = document.getElementById('p').value;
+            const btn = document.querySelector('#loginPage button');
+            
+            if(u === "" || p === "") { 
+                alert("Isi Username & Password!"); 
+                return; 
             }
-        }
 
-        function login() {
-            let u = document.getElementById('u').value.trim();
-            let p = document.getElementById('p').value.trim();
-            if(u === "" || p === "") { alert("Isi Username & Password!"); return; }
-            
-            usernameLogin = u;
-            passwordLogin = p;
-            pindahHalaman('pilihPage');
-        }
-
-        // AMBIL SOAL MENGGUNAKAN METODE JSONP BYPASS UNTUK MENGHINDARI EROR KONEKSI
-        function mulaiUjian() {
-            let k = document.getElementById('pilihKelas').value;
-            let m = document.getElementById('pilihMapel').value;
-            let t = document.getElementById('inputToken').value;
-            
-            const btn = document.getElementById('btnMulai');
-            btn.innerText = "Menghubungkan ke Server...";
+            btn.innerText = "Memproses...";
             btn.disabled = true;
 
-            // Trik mutakhir meloloskan pengambilan data (GET) dari blokir CORS lokal: Menggunakan tag script dinamis
-            const callbackName = "handleDataSoal_" + Math.floor(Math.random() * 100000);
-            window[callbackName] = function(res) {
-                // Hapus tag setelah selesai digunakan
-                document.getElementById(callbackName).remove();
-                delete window[callbackName];
-                
-                btn.innerText = "MULAI UJIAN";
-                btn.disabled = false;
-                
-                if(res.status === "error") {
-                    alert("Eror: " + res.message);
-                } else if(res.data.length === 0) {
-                    alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
-                } else {
-                    bankSoal = res.data;
-                    localStorage.clear();
-                    currentIdx = 0;
-                    pindahHalaman('ujianPage');
-                    aktifkanCheatDetector();
-                    renderSoal();
-                }
-            };
-
-            // Mengirim request berbentuk script tag ke doGet Apps Script
-            const scriptTag = document.createElement("script");
-            scriptTag.id = callbackName;
-            scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${k}&mapel=${m}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${callbackName}`;
-            
-            // Tangani jika terjadi kegagalan jaringan internet murni di HP siswa
-            scriptTag.onerror = function() {
-                btn.innerText = "MULAI UJIAN";
-                btn.disabled = false;
-                alert("Gagal mengunduh soal! Kemungkinan penyebab:\n1. Salah input Username/Password saat di halaman depan.\n2. Koneksi internet HP tidak stabil.\n3. Nama Sheet soal di Spreadsheet tidak sesuai format (Kelas_Mapel).");
-                scriptTag.remove();
-            };
-
-            document.body.appendChild(scriptTag);
-        }
-
-        function simpanJawaban(id, v) {
-            let soal = bankSoal.find(s => s.id == id);
-            let tersimpan = localStorage.getItem("soal_" + id);
-            let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
-            
-            if (soal.jenis === 'PG' || soal.jenis === 'BS') {
-                pilihan = [v];
-            } else {
-                if (pilihan.includes(v)) { 
-                    pilihan = pilihan.filter(item => item !== v);
-                } else { 
-                    pilihan.push(v); 
-                }
-            }
-            localStorage.setItem("soal_" + id, JSON.stringify(pilihan));
-            renderSoal();
-        }
-
-        function renderSoal() {
-            const soal = bankSoal[currentIdx];
-            document.getElementById('nomer-soal').innerText = "Soal No. " + (currentIdx + 1) + " [" + soal.jenis + "]";
-            document.getElementById('pertanyaanText').innerText = soal.tanya;
-            
-            let htmlGambar = soal.gambar ? `<img src="${soal.gambar}" class="img-fluid mb-3 rounded shadow-sm">` : "";
-            let tersimpan = localStorage.getItem("soal_" + soal.id);
-            let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
-            
-            let opsiTersedia = (soal.jenis === 'BS') ? ['a', 'b'] : ['a', 'b', 'c', 'd'];
-            let htmlOpsi = opsiTersedia.map(p => {
-                const isSelected = pilihan.includes(p) ? "selected" : "";
-                return `<div class="opsi-container ${isSelected}" onclick="simpanJawaban('${soal.id}', '${p}')">
-                            <strong>${p.toUpperCase()}.</strong> ${soal[p] || ""}
-                        </div>`;
-            }).join('');
-            
-            document.getElementById('opsiBox').innerHTML = htmlGambar + htmlOpsi;
-            document.getElementById('btnNext').style.display = (currentIdx === bankSoal.length - 1) ? "none" : "block";
-            document.getElementById('btnSelesai').style.display = (currentIdx === bankSoal.length - 1) ? "block" : "none";
-        }
-
-        function navSoal(step) { 
-            if(currentIdx + step >= 0 && currentIdx + step < bankSoal.length) {
-                currentIdx += step;
-                renderSoal(); 
-                window.scrollTo(0, 0);
-            }
-        }
-
-        function pindahHalaman(id) { 
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(id).classList.add('active'); 
-            window.scrollTo(0, 0);
-        }
-
-        function konfirmasiSelesai() {
-            if(!confirm("Yakin ingin menyelesaikan ujian?")) return;
-            kirimKeServerOtomatis();
-        }
-
-        function kirimKeServerOtomatis() {
-            let jawaban = {};
-            bankSoal.forEach(s => {
-                jawaban[s.id] = localStorage.getItem("soal_" + s.id) || "[]";
-            });
-
-            const payload = {
-                action: "apiSubmit", // Parameter action penanda submit
-                username: usernameLogin,
-                kelas: document.getElementById('pilihKelas').value,
-                mapel: document.getElementById('pilihMapel').value,
-                jawaban: jawaban,
-                cheatLog: cheatCount
-            };
-
-            const btnSelesai = document.getElementById('btnSelesai');
-            btnSelesai.innerText = "Mengirim...";
-            btnSelesai.disabled = true;
-
-            fetch(DEPLOY_WEB_APP_URL, {
+            fetch(API_URL, {
                 method: "POST",
-                mode: "no-cors", 
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
+                headers: {
+                    // Ini kunci utamanya untuk bypass blokir CORS dari Google
+                    "Content-Type": "text/plain;charset=utf-8"
+                },
+                body: JSON.stringify({ type: "login", username: u, password: p })
             })
-            .then(() => {
-                showSuccessMessage("Sukses! Jawaban Anda berhasil dikirim."); 
-                localStorage.clear();
-                setTimeout(() => location.reload(), 3000); 
+            .then(res => {
+                if (!res.ok) throw new Error("Gagal terhubung ke server GAS");
+                return res.json();
+            })
+            .then(res => {
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                if(res.status === "success") {
+                    usernameLogin = u;
+                    alert("Berhasil Login! Selamat mengerjakan.");
+                    // Tambahkan logika pindah ke halaman ujian di sini
+                } else {
+                    alert("Login Gagal: Username/Password salah.");
+                }
             })
             .catch(err => {
-                alert("Koneksi bermasalah saat mengirim nilai! Cari sinyal stabil lalu tekan SELESAI lagi. Detil: " + err);
-                btnSelesai.innerText = "SELESAI";
-                btnSelesai.disabled = false;
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                alert("Error: Tidak dapat terhubung ke server. Pastikan URL Web App benar.");
+                console.error("Detail Error:", err);
             });
         }
 
-        function showSuccessMessage(message) {
-            const alertBox = document.getElementById('alertBox');
-            document.getElementById('msgText').innerText = message;
-            alertBox.classList.remove('d-none');
+       // --- SUPER CHEAT DETECTOR (OPTIMAL UNTUK WEB2APK) ---
+        let jumlahPelanggaran = 0;
+
+        function kirimLogPelanggaran(jenisPelanggaran) {
+            if (usernameLogin !== "") {
+                jumlahPelanggaran++;
+                
+                // Alert untuk memberi shock therapy ke siswa
+                alert(`PERINGATAN KE-${jumlahPelanggaran}!\nPelanggaran Terdeteksi: ${jenisPelanggaran}.\nCatatan ini telah dikirim ke server pengawas!`);
+                
+                // Kirim log secara diam-diam ke Google Sheets (no-cors)
+                fetch(API_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    body: JSON.stringify({ 
+                        type: "log", 
+                        username: usernameLogin, 
+                        pelanggaran: `${jenisPelanggaran} (Pelanggaran ke-${jumlahPelanggaran})` 
+                    })
+                });
+            }
         }
+
+        // 1. DETEKSI TARIK TOOLBAR / DI-MINIMIZE / PINDAH TAB (Paling Akurat)
+        // Ketika siswa menarik toolbar atas atau menekan tombol home, layar web otomatis kehilangan fokus (Blur)
+        window.addEventListener("blur", () => {
+            // Diberi sedikit jeda untuk memastikan bukan karena alert bawaan web
+            setTimeout(() => {
+                if (!document.hasFocus()) {
+                    kirimLogPelanggaran("Menarik Toolbar Atas / Buka Notifikasi / Keluar Aplikasi");
+                }
+            }, 600);
+        });
+
+        // 2. DETEKSI PERUBAHAN VISIBILITAS LAYAR
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                kirimLogPelanggaran("Aplikasi Disembunyikan / Sesi Ujian Ditinggalkan");
+            }
+        });
+
+        // 3. DETEKSI KURSOR MENINGGALKAN AREA UJIAN (Jika ada yang iseng pakai mouse/emulator)
+        document.addEventListener("mouseleave", () => {
+            kirimLogPelanggaran("Mencoba Mengarahkan Kursor Keluar Layar");
+        });
+
+        // 4. BLOKIR TOTAL AKSES MODIFIKASI (Copy, Cut, Paste, Klik Kanan)
+        document.addEventListener("copy", (e) => { e.preventDefault(); return false; });
+        document.addEventListener("cut", (e) => { e.preventDefault(); return false; });
+        document.addEventListener("paste", (e) => { e.preventDefault(); return false; });
+        document.addEventListener("contextmenu", (e) => { e.preventDefault(); return false; });
+
+        // 5. BLOKIR SEBAGIAN TOMBOL FISIK / KEYBOARD (Jika siswa mencoba pakai keyboard eksternal)
+        document.addEventListener("keydown", (e) => {
+            // Blokir tombol F12, Ctrl+Shift+I, Ctrl+U (Inspect Element)
+            if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85)) {
+                e.preventDefault();
+                kirimLogPelanggaran("Mencoba Membuka Fitur Inspeksi Kode");
+                return false;
+            }
+        });
     </script>
 </body>
 </html>

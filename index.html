@@ -11,12 +11,15 @@
         .opsi-container { cursor: pointer; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 10px; transition: 0.3s; }
         .opsi-container:hover { background: #f8f9fa; }
         .selected { background: #d1e7dd; border-color: #0f5132; }
+        /* Style tambahan untuk modal kustom penghenti layar */
+        #customAlert { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; }
     </style>
 </head>
 <body class="bg-light">
 
     <script>const API_URL = "https://script.google.com/macros/s/AKfycbx79KoPf2FJq9VI2ofk5FJLLr2FuLuJMmcII6sbS3UF4Xt9h_Apob63WNIv4prw80N1/exec";</script>
 
+    <!-- HALAMAN LOGIN -->
     <div id="loginPage" class="page active container mt-5">
         <div class="card p-4 mx-auto" style="max-width: 400px;">
             <h4 class="text-center">Login Siswa</h4>
@@ -26,11 +29,22 @@
         </div>
     </div>
 
+    <!-- MODAL PERINGATAN KUSTOM (Pengganti alert() agar tidak merusak fokus layar) -->
+    <div id="customAlert">
+        <div class="card p-4 mx-3 text-center" style="max-width: 450px; border: 3px solid #dc3545;">
+            <h3 class="text-danger fw-bold">PELANGGARAN TERDETEKSI!</h3>
+            <p id="alertMessage" class="fs-5 my-3"></p>
+            <button class="btn btn-danger w-100 fw-bold" onclick="tutupAlertKustom()">SAYA MENGERTI</button>
+        </div>
+    </div>
+
     <script>
         let usernameLogin = "";
+        let jumlahPelanggaran = 0;
+        let isAlertShowing = false; // Pengunci agar tidak terjadi deteksi ganda saat modal muncul
 
         // FUNGSI LOGIN
-       function login() {
+        function login() {
             let u = document.getElementById('u').value;
             let p = document.getElementById('p').value;
             const btn = document.querySelector('#loginPage button');
@@ -46,7 +60,6 @@
             fetch(API_URL, {
                 method: "POST",
                 headers: {
-                    // Ini kunci utamanya untuk bypass blokir CORS dari Google
                     "Content-Type": "text/plain;charset=utf-8"
                 },
                 body: JSON.stringify({ type: "login", username: u, password: p })
@@ -74,15 +87,15 @@
             });
         }
 
-       // --- SUPER CHEAT DETECTOR (OPTIMAL UNTUK WEB2APK) ---
-        let jumlahPelanggaran = 0;
-
+        // --- SUPER CHEAT DETECTOR (DIOPTIMALKAN) ---
         function kirimLogPelanggaran(jenisPelanggaran) {
-            if (usernameLogin !== "") {
+            if (usernameLogin !== "" && !isAlertShowing) {
+                isAlertShowing = true;
                 jumlahPelanggaran++;
                 
-                // Alert untuk memberi shock therapy ke siswa
-                alert(`PERINGATAN KE-${jumlahPelanggaran}!\nPelanggaran Terdeteksi: ${jenisPelanggaran}.\nCatatan ini telah dikirim ke server pengawas!`);
+                // Tampilkan Peringatan Kustom berbasis HTML (Fokus Jendela Utama Tetap Terjaga)
+                document.getElementById('alertMessage').innerHTML = `<b>Peringatan Ke-${jumlahPelanggaran}</b><br>${jenisPelanggaran}.<br><br><span class="text-muted small">Catatan pelanggaran telah dikirim ke Google Sheets pengawas.</span>`;
+                document.getElementById('customAlert').style.display = 'flex';
                 
                 // Kirim log secara diam-diam ke Google Sheets (no-cors)
                 fetch(API_URL, {
@@ -97,38 +110,46 @@
             }
         }
 
-        // 1. DETEKSI TARIK TOOLBAR / DI-MINIMIZE / PINDAH TAB (Paling Akurat)
-        // Ketika siswa menarik toolbar atas atau menekan tombol home, layar web otomatis kehilangan fokus (Blur)
-        window.addEventListener("blur", () => {
-            // Diberi sedikit jeda untuk memastikan bukan karena alert bawaan web
+        function tutupAlertKustom() {
+            document.getElementById('customAlert').style.display = 'none';
+            // Beri jeda 1 detik setelah ditutup sebelum mengaktifkan radar deteksi kembali
             setTimeout(() => {
-                if (!document.hasFocus()) {
-                    kirimLogPelanggaran("Menarik Toolbar Atas / Buka Notifikasi / Keluar Aplikasi");
+                isAlertShowing = false;
+            }, 1000);
+        }
+
+        // 1. DETEKSI UTAMA: KEHILANGAN FOKUS (Tarif Toolbar, Keluar Aplikasi, Split Screen, Pop-up)
+        window.addEventListener("blur", () => {
+            // Cek status fokus dokumen dengan jeda singkat untuk validasi presisi
+            setTimeout(() => {
+                if (!document.hasFocus() && !isAlertShowing) {
+                    kirimLogPelanggaran("Menarik Toolbar Atas / Buka Notifikasi / Celah Sistem");
                 }
-            }, 600);
+            }, 300);
         });
 
-        // 2. DETEKSI PERUBAHAN VISIBILITAS LAYAR
+        // 2. DETEKSI PERUBAHAN VISIBILITAS LAYAR (Minimize / Tekan Home / Ganti Aplikasi)
         document.addEventListener("visibilitychange", () => {
-            if (document.hidden) {
-                kirimLogPelanggaran("Aplikasi Disembunyikan / Sesi Ujian Ditinggalkan");
+            if (document.hidden && !isAlertShowing) {
+                kirimLogPelanggaran("Aplikasi Di-minimize / Sesi Ujian Ditinggalkan");
             }
         });
 
-        // 3. DETEKSI KURSOR MENINGGALKAN AREA UJIAN (Jika ada yang iseng pakai mouse/emulator)
+        // 3. DETEKSI KURSOR MENINGGALKAN AREA UJIAN
         document.addEventListener("mouseleave", () => {
-            kirimLogPelanggaran("Mencoba Mengarahkan Kursor Keluar Layar");
+            if (!isAlertShowing) {
+                kirimLogPelanggaran("Mencoba Keluar dari Area Jendela Ujian");
+            }
         });
 
-        // 4. BLOKIR TOTAL AKSES MODIFIKASI (Copy, Cut, Paste, Klik Kanan)
+        // 4. BLOKIR TOTAL AKSES MODIFIKASI
         document.addEventListener("copy", (e) => { e.preventDefault(); return false; });
         document.addEventListener("cut", (e) => { e.preventDefault(); return false; });
         document.addEventListener("paste", (e) => { e.preventDefault(); return false; });
         document.addEventListener("contextmenu", (e) => { e.preventDefault(); return false; });
 
-        // 5. BLOKIR SEBAGIAN TOMBOL FISIK / KEYBOARD (Jika siswa mencoba pakai keyboard eksternal)
+        // 5. BLOKIR SEBAGIAN TOMBOL FISIK / KEYBOARD
         document.addEventListener("keydown", (e) => {
-            // Blokir tombol F12, Ctrl+Shift+I, Ctrl+U (Inspect Element)
             if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85)) {
                 e.preventDefault();
                 kirimLogPelanggaran("Mencoba Membuka Fitur Inspeksi Kode");

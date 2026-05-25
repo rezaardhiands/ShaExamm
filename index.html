@@ -18,6 +18,7 @@
 </head>
 <body class="bg-light">
 
+    <!-- KOMPONEN MODAL UNTUK MENGGANTIKAN ALERT BAWAAN BROWSER -->
     <div class="modal fade" id="cheatModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" style="z-index: 2000;">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -87,11 +88,12 @@
         </div>
         <div class="d-flex justify-content-between mt-3 mb-5">
             <button class="btn btn-secondary" onclick="navSoal(-1)">Prev</button>
-            <button id="btnNext" class="btn btn-primary" onclick="navSoal(1)">Next</button>
+            <button id="btnNext" class="btn btn-primary" onclick="navSoal(11)">Next</button>
             <button id="btnSelesai" class="btn btn-danger" style="display:none;" onclick="konfirmasiSelesai()">SELESAI</button>
         </div>
     </div>
 
+    <!-- SCRIPT UTAMA & INSTANSI BOOTSTRAP -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // =========================================================================
@@ -103,36 +105,48 @@
         let cheatCount = 0; 
         const maxViolations = 2;
         let isProcessingSubmit = false; 
-        let bsCheatModal = null; // Instansi objek Modal Bootstrap
+        let bsCheatModal = null; 
+        let violationTimeout = null; // Variabel penampung timer jeda kecurangan
 
-        // DETEKSI KECURANGAN
+        // INTEGRASI BARU: Detektor Kecurangan dengan Logika Toleransi Jeda Waktu
         function aktifkanCheatDetector() {
             bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
 
+            // 1. Pindah Tab atau Meminimalkan Aplikasi (LANGSUNG DIHUKUM TANPA JEDA)
             document.addEventListener("visibilitychange", function() {
-                if (document.hidden) { 
-                    handleViolation("Membuka tab baru / Keluar aplikasi!"); 
+                const isExam = document.getElementById('ujianPage').classList.contains('active');
+                if (document.visibilityState === "hidden" && isExam) {
+                    handleViolation("Membuka tab baru / Keluar aplikasi!");
+                }
+            });
+            
+            // 2. Layar Kehilangan Fokus / Blur (DENGAN JEDA TOLERANSI 3 DETIK)
+            window.addEventListener("blur", function() {
+                const isExam = document.getElementById('ujianPage').classList.contains('active');
+                if (isExam && !isProcessingSubmit) {
+                    // Beri waktu tunggu 3 detik sebelum mengeksekusi pelanggaran
+                    violationTimeout = setTimeout(function() {
+                        handleViolation("Membuka panel notifikasi / Floating apps / Kehilangan fokus layar!");
+                    }, 3000); // Ubah ke 1000 jika hanya ingin toleransi 1 detik
                 }
             });
 
-            window.addEventListener("blur", function() {
-                handleViolation("Membuka panel notifikasi / Floating apps / Kehilangan fokus layar!");
-            });
-
-            window.addEventListener("resize", function() {
-                if (document.getElementById('ujianPage').classList.contains('active')) {
-                    handleViolation("Mengaktifkan mode Split Screen / Mengubah ukuran layar!");
+            // 3. Jika Layar Kembali Fokus Sebelum 3 Detik Habis (PEMBATALAN HUKUMAN)
+            window.addEventListener("focus", function() {
+                if (violationTimeout) {
+                    clearTimeout(violationTimeout);
+                    violationTimeout = null;
+                    console.log("Fokus kembali: Pelanggaran dibatalkan karena respon cepat.");
                 }
             });
         }
 
         function handleViolation(reason) {
-            // JIKA SUDAH PROSES KIRIM ATAU MODAL SEDANG TERBUKA, TOLAK PELANGGARAN DOBEL
             if(!document.getElementById('ujianPage').classList.contains('active') || isProcessingSubmit) {
                 return;
             }
 
-            // Kunci state penanganan pelanggaran saat ini agar event blur berikutnya tidak masuk antrean
+            // Kunci state penanganan agar tidak tumpang tindih saat animasi modal berjalan
             isProcessingSubmit = true; 
             cheatCount++;
             
@@ -144,7 +158,6 @@
             }
 
             if (cheatCount >= maxViolations) {
-                // Set konten modal pemblokiran final
                 document.getElementById('cheatModalTitle').innerText = "🚨 AKUN ANDA DIBLOKIR";
                 document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Jawaban Anda saat ini otomatis dikirim ke server.</strong>";
                 document.getElementById('btnConfirmCheat').innerText = "KEMBALI KE LOGIN";
@@ -156,7 +169,6 @@
                 bsCheatModal.show();
                 kirimKeServerOtomatis();
             } else {
-                // Tampilkan modal peringatan pertama secara non-blocking
                 document.getElementById('cheatModalTitle').innerText = "⚠️ PERINGATAN KECURANGAN";
                 document.getElementById('cheatModalBody').innerHTML = `Peringatan [${cheatCount}/${maxViolations}]:<br><strong>Dilarang ${reason}</strong>`;
                 document.getElementById('btnConfirmCheat').innerText = "SAYA MENGERTI, LANJUTKAN UJIAN";
@@ -165,17 +177,15 @@
             }
         }
 
-        // Fungsi kontrol penutupan modal dialog kustom
         function tutupModalPeringatan() {
             if (cheatCount >= maxViolations) {
-                // Jika sudah diblokir total, klik tombol wajib mengembalikan ke login awal (refresh aplikasi)
                 location.reload();
             } else {
-                // Jika baru pelanggaran pertama, tutup modal dan buka kembali kunci deteksi
                 bsCheatModal.hide();
-                setTimeout(() => {
+                // Buka kembali pengunci detektor setelah modal tertutup sempurna demi stabilitas fokus browser
+                setTimeout(function() {
                     isProcessingSubmit = false; 
-                }, 500); // Beri jeda 500ms agar focus kembali stabil
+                }, 500); 
             }
         }
 
@@ -340,7 +350,6 @@
             }
         }
 
-        // Mengatur perpindahan halaman secara aman
         function pindahHalaman(id) { 
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(id).classList.add('active'); 
@@ -392,7 +401,6 @@
                     }
                 }
                 
-                // Jika pengiriman karena selesai normal (bukan karena terblokir max pelanggaran)
                 if(cheatCount < maxViolations) {
                     setTimeout(() => {
                         location.reload();

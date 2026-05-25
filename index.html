@@ -13,9 +13,26 @@
         .opsi-container:hover { background: #f8f9fa; }
         .selected { background: #d1e7dd !important; border-color: #0f5132 !important; }
         .img-fluid { max-height: 250px; object-fit: contain; display: block; }
+        .cheat-counter-badge { font-size: 0.9rem; padding: 6px 12px; border-radius: 20px; }
     </style>
 </head>
 <body class="bg-light">
+
+    <div class="modal fade" id="cheatModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" style="z-index: 2000;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="cheatModalTitle">⚠️ PERINGATAN KECURANGAN</h5>
+                </div>
+                <div class="modal-body fs-5" id="cheatModalBody">
+                    Dilarang melakukan tindakan keluar dari aplikasi ujian!
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger w-100" id="btnConfirmCheat" onclick="tutupModalPeringatan()">SAYA MENGERTI</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="msgContainer" class="fixed-top p-3" style="z-index: 1050;">
         <div id="alertBox" class="alert alert-success d-none" role="alert">
@@ -37,24 +54,32 @@
             <h4>Pilih Ujian</h4>
             <label class="small text-muted">Pilih Kelas:</label>
             <select id="pilihKelas" class="form-select mb-2">
+            	<option value="">Pilih Kelas</option>
                 <option value="7">7</option>
                 <option value="8">8</option>
                 <option value="9">9</option>
             </select>
             <label class="small text-muted">Pilih Mapel:</label>
             <select id="pilihMapel" class="form-select mb-2">
+            	<option value="">Pilih Mapel</option>
                 <option value="IPA">IPA</option>
                 <option value="IPS">IPS</option>
-                <option value="MATEMATIKA">MATEMATIKA</option>
                 <option value="COBA">COBA</option>
             </select>
-            <label class="small text-muted">Token Ujian (Jika ada):</label>
+            <label class="small text-muted">Token Ujian:</label>
             <input id="inputToken" class="form-control mb-3" placeholder="Token Ujian">
             <button id="btnMulai" class="btn btn-success w-100" onclick="mulaiUjian()">MULAI UJIAN</button>
         </div>
     </div>
 
     <div id="ujianPage" class="page container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-white rounded shadow-sm">
+            <span id="namaPesertaUjian" class="fw-bold text-secondary">Siswa</span>
+            <div id="statusPelanggaranBox" class="badge bg-success cheat-counter-badge">
+                Pelanggaran: 0 / 2
+            </div>
+        </div>
+
         <div class="card-soal">
             <p id="nomer-soal" class="fw-bold"></p>
             <p id="pertanyaanText"></p>
@@ -67,6 +92,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // =========================================================================
         // PENTING: TEMPEL URL WEB APP HASIL RE-DEPLOY ANDA DI SINI
@@ -75,95 +101,145 @@
 
         let currentIdx = 0, bankSoal = [], usernameLogin = "", passwordLogin = "";
         let cheatCount = 0; 
-        const maxViolations = 3;
+        const maxViolations = 2;
+        let isProcessingSubmit = false; 
+        let bsCheatModal = null; // Instansi objek Modal Bootstrap
 
+        // DETEKSI KECURANGAN
         function aktifkanCheatDetector() {
+            bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+
             document.addEventListener("visibilitychange", function() {
-                if (document.hidden) { handleViolation("Membuka tab baru/Keluar aplikasi!"); }
+                if (document.hidden) { 
+                    handleViolation("Membuka tab baru / Keluar aplikasi!"); 
+                }
             });
+
             window.addEventListener("blur", function() {
-                handleViolation("Membuka panel atas/Kehilangan fokus layar!");
+                handleViolation("Membuka panel notifikasi / Floating apps / Kehilangan fokus layar!");
+            });
+
+            window.addEventListener("resize", function() {
+                if (document.getElementById('ujianPage').classList.contains('active')) {
+                    handleViolation("Mengaktifkan mode Split Screen / Mengubah ukuran layar!");
+                }
             });
         }
 
         function handleViolation(reason) {
-            if(document.getElementById('ujianPage').classList.contains('active')) {
-                cheatCount++;
-                alert(`тЪая╕П PERINGATAN [${cheatCount}/${maxViolations}]:\nDilarang ${reason}`);
-                if (cheatCount >= maxViolations) {
-                    alert("ЁЯЪи Batas pelanggaran habis! Jawaban Anda langsung dikirim ke server.");
-                    kirimKeServerOtomatis();
-                }
+            // JIKA SUDAH PROSES KIRIM ATAU MODAL SEDANG TERBUKA, TOLAK PELANGGARAN DOBEL
+            if(!document.getElementById('ujianPage').classList.contains('active') || isProcessingSubmit) {
+                return;
+            }
+
+            // Kunci state penanganan pelanggaran saat ini agar event blur berikutnya tidak masuk antrean
+            isProcessingSubmit = true; 
+            cheatCount++;
+            
+            // Update UI
+            const statusBox = document.getElementById('statusPelanggaranBox');
+            if (statusBox) {
+                statusBox.innerText = `Pelanggaran: ${cheatCount} / ${maxViolations}`;
+                statusBox.className = "badge bg-danger cheat-counter-badge";
+            }
+
+            if (cheatCount >= maxViolations) {
+                // Set konten modal pemblokiran final
+                document.getElementById('cheatModalTitle').innerText = "🚨 AKUN ANDA DIBLOKIR";
+                document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Jawaban Anda saat ini otomatis dikirim ke server.</strong>";
+                document.getElementById('btnConfirmCheat').innerText = "KEMBALI KE LOGIN";
+                
+                let k = document.getElementById('pilihKelas').value;
+                let m = document.getElementById('pilihMapel').value;
+                localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
+                
+                bsCheatModal.show();
+                kirimKeServerOtomatis();
+            } else {
+                // Tampilkan modal peringatan pertama secara non-blocking
+                document.getElementById('cheatModalTitle').innerText = "⚠️ PERINGATAN KECURANGAN";
+                document.getElementById('cheatModalBody').innerHTML = `Peringatan [${cheatCount}/${maxViolations}]:<br><strong>Dilarang ${reason}</strong>`;
+                document.getElementById('btnConfirmCheat').innerText = "SAYA MENGERTI, LANJUTKAN UJIAN";
+                
+                bsCheatModal.show();
             }
         }
 
-// --- FUNGSI LOGIN BARU: VALIDASI LANGSUNG KE SERVER ---
-function login() {
-    let u = document.getElementById('u').value.trim();
-    let p = document.getElementById('p').value.trim();
-    const btn = document.getElementById('btnLogin');
-    
-    if(u === "" || p === "") { alert("Isi Username & Password!"); return; }
-    
-    btn.innerText = "Memverifikasi...";
-    btn.disabled = true;
-
-    // Membuat nama callback dinamis khusus login
-    const loginCallback = "handleLoginRes_" + Math.floor(Math.random() * 100000);
-    
-    window[loginCallback] = function(res) {
-        // Bersihkan script tag setelah selesai
-        document.getElementById(loginCallback).remove();
-        delete window[loginCallback];
-        
-        btn.innerText = "MASUK";
-        btn.disabled = false;
-        
-        if(res.status === "success") {
-            // Jika login sukses di server, baru simpan data dan pindah halaman
-            usernameLogin = u;
-            passwordLogin = p;
-            
-            // Opsional: Otomatis pilihkan kelas siswa sesuai database Spreadsheet
-            if(res.kelas) { document.getElementById('pilihKelas').value = res.kelas; }
-            
-            pindahHalaman('pilihPage');
-        } else {
-            // Jika password salah, tertahan di sini dan muncul alert
-            alert("Login Gagal: " + (res.message || "Username atau Password salah!"));
+        // Fungsi kontrol penutupan modal dialog kustom
+        function tutupModalPeringatan() {
+            if (cheatCount >= maxViolations) {
+                // Jika sudah diblokir total, klik tombol wajib mengembalikan ke login awal (refresh aplikasi)
+                location.reload();
+            } else {
+                // Jika baru pelanggaran pertama, tutup modal dan buka kembali kunci deteksi
+                bsCheatModal.hide();
+                setTimeout(() => {
+                    isProcessingSubmit = false; 
+                }, 500); // Beri jeda 500ms agar focus kembali stabil
+            }
         }
-    };
 
-    // Menembak doGet di code.gs dengan action khusus apiLogin
-    const scriptTag = document.createElement("script");
-    scriptTag.id = loginCallback;
-    scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiLogin&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&prefix=${loginCallback}`;
-    
-    scriptTag.onerror = function() {
-        btn.innerText = "MASUK";
-        btn.disabled = false;
-        alert("Gagal terhubung ke server! Periksa koneksi internet HP siswa.");
-        scriptTag.remove();
-    };
+        // --- FUNGSI LOGIN ---
+        function login() {
+            let u = document.getElementById('u').value.trim();
+            let p = document.getElementById('p').value.trim();
+            const btn = document.getElementById('btnLogin');
+            
+            if(u === "" || p === "") { alert("Isi Username & Password!"); return; }
+            
+            btn.innerText = "Memverifikasi...";
+            btn.disabled = true;
 
-    document.body.appendChild(scriptTag);
-}
+            const loginCallback = "handleLoginRes_" + Math.floor(Math.random() * 100000);
+            
+            window[loginCallback] = function(res) {
+                document.getElementById(loginCallback).remove();
+                delete window[loginCallback];
+                
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                
+                if(res.status === "success") {
+                    usernameLogin = u;
+                    passwordLogin = p;
+                    isProcessingSubmit = false; 
+                    
+                    if(res.kelas) { document.getElementById('pilihKelas').value = res.kelas; }
+                    pindahHalaman('pilihPage');
+                } else {
+                    alert("Login Gagal: " + (res.message || "Username atau Password salah!"));
+                }
+            };
 
+            const scriptTag = document.createElement("script");
+            scriptTag.id = loginCallback;
+            scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiLogin&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&prefix=${loginCallback}`;
+            
+            scriptTag.onerror = function() {
+                btn.innerText = "MASUK";
+                btn.disabled = false;
+                alert("Gagal terhubung ke server! Periksa koneksi internet HP siswa.");
+                scriptTag.remove();
+            };
 
-        // AMBIL SOAL MENGGUNAKAN METODE JSONP BYPASS UNTUK MENGHINDARI EROR KONEKSI
+            document.body.appendChild(scriptTag);
+        }
+
+        // AMBIL SOAL MENGGUNAKAN METODE JSONP BYPASS
         function mulaiUjian() {
             let k = document.getElementById('pilihKelas').value;
             let m = document.getElementById('pilihMapel').value;
             let t = document.getElementById('inputToken').value;
             
+            if (k === "") { alert("Pilih Kelas terlebih dahulu!"); return; }
+            if (m === "") { alert("Pilih Mata Pelajaran terlebih dahulu!"); return; }
+            
             const btn = document.getElementById('btnMulai');
             btn.innerText = "Menghubungkan ke Server...";
             btn.disabled = true;
 
-            // Trik mutakhir meloloskan pengambilan data (GET) dari blokir CORS lokal: Menggunakan tag script dinamis
             const callbackName = "handleDataSoal_" + Math.floor(Math.random() * 100000);
             window[callbackName] = function(res) {
-                // Hapus tag setelah selesai digunakan
                 document.getElementById(callbackName).remove();
                 delete window[callbackName];
                 
@@ -175,8 +251,26 @@ function login() {
                 } else if(res.data.length === 0) {
                     alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
                 } else {
+                    localStorage.removeItem(`blocked_${usernameLogin}_${k}_${m}`);
                     bankSoal = res.data;
-                    localStorage.clear();
+                    isProcessingSubmit = false; 
+                    
+                    for (let key in localStorage) {
+                        if (key.startsWith("soal_")) {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                    
+                    cheatCount = 0;
+                    const statusBox = document.getElementById('statusPelanggaranBox');
+                    if (statusBox) {
+                        statusBox.innerText = `Pelanggaran: 0 / ${maxViolations}`;
+                        statusBox.className = "badge bg-success cheat-counter-badge";
+                    }
+
+                    const namaBox = document.getElementById('namaPesertaUjian');
+                    if (namaBox) { namaBox.innerText = usernameLogin; }
+
                     currentIdx = 0;
                     pindahHalaman('ujianPage');
                     aktifkanCheatDetector();
@@ -184,16 +278,14 @@ function login() {
                 }
             };
 
-            // Mengirim request berbentuk script tag ke doGet Apps Script
             const scriptTag = document.createElement("script");
             scriptTag.id = callbackName;
             scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${k}&mapel=${m}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${callbackName}`;
             
-            // Tangani jika terjadi kegagalan jaringan internet murni di HP siswa
             scriptTag.onerror = function() {
                 btn.innerText = "MULAI UJIAN";
                 btn.disabled = false;
-                alert("Gagal mengunduh soal! Kemungkinan penyebab:\n1. Salah input Username/Password saat di halaman depan.\n2. Koneksi internet HP tidak stabil.\n3. Nama Sheet soal di Spreadsheet tidak sesuai format (Kelas_Mapel).");
+                alert("Gagal mengunduh soal! Periksa koneksi internet atau parameter ujian.");
                 scriptTag.remove();
             };
 
@@ -248,6 +340,7 @@ function login() {
             }
         }
 
+        // Mengatur perpindahan halaman secara aman
         function pindahHalaman(id) { 
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(id).classList.add('active'); 
@@ -256,6 +349,7 @@ function login() {
 
         function konfirmasiSelesai() {
             if(!confirm("Yakin ingin menyelesaikan ujian?")) return;
+            isProcessingSubmit = true; 
             kirimKeServerOtomatis();
         }
 
@@ -265,18 +359,23 @@ function login() {
                 jawaban[s.id] = localStorage.getItem("soal_" + s.id) || "[]";
             });
 
+            let k = document.getElementById('pilihKelas').value;
+            let m = document.getElementById('pilihMapel').value;
+
             const payload = {
-                action: "apiSubmit", // Parameter action penanda submit
+                action: "apiSubmit", 
                 username: usernameLogin,
-                kelas: document.getElementById('pilihKelas').value,
-                mapel: document.getElementById('pilihMapel').value,
+                kelas: k,
+                mapel: m,
                 jawaban: jawaban,
                 cheatLog: cheatCount
             };
 
             const btnSelesai = document.getElementById('btnSelesai');
-            btnSelesai.innerText = "Mengirim...";
-            btnSelesai.disabled = true;
+            if (btnSelesai) {
+                btnSelesai.innerText = "Mengirim...";
+                btnSelesai.disabled = true;
+            }
 
             fetch(DEPLOY_WEB_APP_URL, {
                 method: "POST",
@@ -285,14 +384,28 @@ function login() {
                 body: JSON.stringify(payload)
             })
             .then(() => {
-                showSuccessMessage("Sukses! Jawaban Anda berhasil dikirim."); 
-                localStorage.clear();
-                setTimeout(() => location.reload(), 3000); 
+                showSuccessMessage("Jawaban berhasil dikirim."); 
+                
+                for (let key in localStorage) {
+                    if (key.startsWith("soal_")) {
+                        localStorage.removeItem(key);
+                    }
+                }
+                
+                // Jika pengiriman karena selesai normal (bukan karena terblokir max pelanggaran)
+                if(cheatCount < maxViolations) {
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                }
             })
             .catch(err => {
                 alert("Koneksi bermasalah saat mengirim nilai! Cari sinyal stabil lalu tekan SELESAI lagi. Detil: " + err);
-                btnSelesai.innerText = "SELESAI";
-                btnSelesai.disabled = false;
+                if (btnSelesai) {
+                    btnSelesai.innerText = "SELESAI";
+                    btnSelesai.disabled = false;
+                }
+                if(cheatCount < maxViolations) isProcessingSubmit = false; 
             });
         }
 

@@ -14,11 +14,11 @@
         .selected { background: #d1e7dd !important; border-color: #0f5132 !important; }
         .img-fluid { max-height: 250px; object-fit: contain; display: block; }
         .cheat-counter-badge { font-size: 0.9rem; padding: 6px 12px; border-radius: 20px; }
+        .img-opsi { max-height: 150px; object-fit: contain; display: block; margin-top: 8px; border-radius: 8px; }
     </style>
 </head>
 <body class="bg-light">
 
-    <!-- KOMPONEN MODAL UNTUK MENGGANTIKAN ALERT BAWAAN BROWSER -->
     <div class="modal fade" id="cheatModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" style="z-index: 2000;">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -34,6 +34,24 @@
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="konfirmasiSelesaiModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" style="z-index: 1900;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">❓ KONFIRMASI SELESAI</h5>
+                </div>
+                <div class="modal-body fs-5">
+                    Apakah Anda yakin ingin mengakhiri dan mengirim semua jawaban ujian sekarang?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary w-50" data-bs-dismiss="modal">BATAL</button>
+                    <button type="button" class="btn btn-success w-50" onclick="eksekusiSelesaiUjian()">YA, KIRIM</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <div id="msgContainer" class="fixed-top p-3" style="z-index: 1050;">
         <div id="alertBox" class="alert alert-success d-none" role="alert">
@@ -62,21 +80,19 @@
             </select>
             <label class="small text-muted">Pilih Mapel:</label>
             <select id="pilihMapel" class="form-select mb-2">
-            	<option value="">Pilih Mapel</option>
-         <option value="IPA">IPA</option>
-        <option value="IPS">IPS</option>
-        <option value="PAI">PAI</option>
-        <option value="Aswaja">Aswaja</option>
-        <option value="Bahasa Indonesia">Bahasa Indonesia</option>
-        <option value="PJOK">PJOK</option>
-        <option value="Informatika">Informatika</option>
-        <option value="Bahasa Daerah">Bahasa Daerah</option>
-        <option value="Bahasa Inggris">Bahasa Inggris</option>
-        <option value="Prakarya">Prakarya</option>
-        <option value="PKN">PKN</option>
-        <option value="Matematika">Matematika</option>
-        <option value="KWU">KWU</option>
-        <option value="Seni Budaya">Seni Budaya</option>
+            	<option value="COBA">COBA</option>
+        		<option value="IPA">IPA</option>
+      		    <option value="IPS">IPS</option>
+  		        <option value="PAI">PAI</option>
+ 		        <option value="Aswaja">Aswaja</option>
+  		        <option value="Bahasa Indonesia">Bahasa Indonesia</option>
+  		        <option value="PJOK">PJOK</option>
+  		        <option value="Informatika">Informatika</option>
+  		        <option value="Bahasa Daerah">Bahasa Daerah</option>
+ 		        <option value="Bahasa Inggris">Bahasa Inggris</option>
+  		        <option value="Prakarya">Prakarya</option>
+ 		        <option value="PKN">PKN</option>
+  		        <option value="Matematika">Matematika</option>
             </select>
             <label class="small text-muted">Token Ujian:</label>
             <input id="inputToken" class="form-control mb-3" placeholder="Token Ujian">
@@ -104,52 +120,116 @@
         </div>
     </div>
 
-    <!-- SCRIPT UTAMA & INSTANSI BOOTSTRAP -->
+    <div id="suksesPage" class="page container mt-5">
+        <div class="card p-5 text-center mx-auto rounded shadow-sm bg-white" style="max-width: 500px; border-top: 5px solid #198754;">
+            <div class="mb-4">
+                <span class="fs-1 text-success" id="ikonStatusSukses">✓</span>
+            </div>
+            <h3 class="text-success fw-bold mb-3" id="judulStatusSukses">Ujian Selesai!</h3>
+            <p class="fs-5 text-secondary mb-4" id="teksStatusSukses">Jawaban Anda sudah diterima oleh server.</p>
+            <div class="p-3 bg-light rounded text-muted small" id="petunjukStatusSukses">
+                Silakan letakkan HP Anda di meja atau tunjukkan halaman ini kepada pengawas ujian sebagai bukti.
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // =========================================================================
-        // PENTING: TEMPEL URL WEB APP HASIL RE-DEPLOY ANDA DI SINI
-        // =========================================================================
         const DEPLOY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx79KoPf2FJq9VI2ofk5FJLLr2FuLuJMmcII6sbS3UF4Xt9h_Apob63WNIv4prw80N1/exec"; 
 
-        let currentIdx = 0, bankSoal = [], usernameLogin = "", passwordLogin = "";
+        let currentIdx = 0, bankSoal = [], usernameLogin = "", passwordLogin = "", namaSiswaAsli = "";
         let cheatCount = 0; 
         const maxViolations = 2;
         let isProcessingSubmit = false; 
         let bsCheatModal = null; 
-        let violationTimeout = null; // Variabel penampung timer jeda kecurangan
+        let violationTimeout = null; 
+        let tinggiLayarAsli = 0;
 
-        // INTEGRASI BARU: Detektor Kecurangan dengan Logika Toleransi Jeda Waktu
         function aktifkanCheatDetector() {
             bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+            let detikLuarFokus = 0; 
 
-            // 1. Pindah Tab atau Meminimalkan Aplikasi (LANGSUNG DIHUKUM TANPA JEDA)
             document.addEventListener("visibilitychange", function() {
                 const isExam = document.getElementById('ujianPage').classList.contains('active');
                 if (document.visibilityState === "hidden" && isExam) {
                     handleViolation("Membuka tab baru / Keluar aplikasi!");
                 }
             });
-            
-            // 2. Layar Kehilangan Fokus / Blur (DENGAN JEDA TOLERANSI 3 DETIK)
+
             window.addEventListener("blur", function() {
                 const isExam = document.getElementById('ujianPage').classList.contains('active');
                 if (isExam && !isProcessingSubmit) {
-                    // Beri waktu tunggu 3 detik sebelum mengeksekusi pelanggaran
+                    if (violationTimeout) clearTimeout(violationTimeout);
                     violationTimeout = setTimeout(function() {
-                        handleViolation("Membuka panel notifikasi / Floating apps / Kehilangan fokus layar!");
-                    }, 3000); // Ubah ke 1000 jika hanya ingin toleransi 1 detik
+                        handleViolation("Membuka panel notifikasi / Kehilangan fokus layar!");
+                    }, 3000); 
                 }
             });
 
-            // 3. Jika Layar Kembali Fokus Sebelum 3 Detik Habis (PEMBATALAN HUKUMAN)
             window.addEventListener("focus", function() {
                 if (violationTimeout) {
                     clearTimeout(violationTimeout);
                     violationTimeout = null;
-                    console.log("Fokus kembali: Pelanggaran dibatalkan karena respon cepat.");
                 }
             });
+
+            setInterval(function() {
+                const isExam = document.getElementById('ujianPage').classList.contains('active');
+                
+                if (isExam && !isProcessingSubmit) {
+                    const tidakFokus = !document.hasFocus();
+                    const halamanTerhalang = document.visibilityState !== "visible";
+
+                    if (tidakFokus || halamanTerhalang) {
+                        detikLuarFokus++;
+                        if (detikLuarFokus >= 3) {
+                            detikLuarFokus = 0;
+                            if (violationTimeout) clearTimeout(violationTimeout);
+                            handleViolation("Membuka panel notifikasi / Mengetuk aplikasi luar terlalu lama!");
+                            return;
+                        }
+                    } else {
+                        detikLuarFokus = 0; 
+                    }
+
+                    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                    const isLayarBerubah = tinggiLayarAsli > 0 && (window.innerHeight < tinggiLayarAsli);
+
+                    if (!isFullscreen || isLayarBerubah) {
+                        if (violationTimeout) clearTimeout(violationTimeout);
+                        handleViolation("Mengubah ukuran layar (Split Screen / Jendela Melayang)!");
+                    }
+                }
+            }, 1000);
+
+            document.addEventListener('fullscreenchange', handleFullscreenExitChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenExitChange);
+            document.addEventListener('mozfullscreenchange', handleFullscreenExitChange);
+            document.addEventListener('MSFullscreenChange', handleFullscreenExitChange);
+        }
+
+        function handleFullscreenExitChange() {
+            const isExam = document.getElementById('ujianPage').classList.contains('active');
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement && !document.msFullscreenElement && isExam) {
+                if (!isProcessingSubmit) {
+                    handleViolation("Keluar dari Mode Layar Penuh (Fullscreen)!");
+                }
+            }
+        }
+
+        function requestFullscreenSistem() {
+            const docElm = document.documentElement;
+            if (docElm.requestFullscreen) { docElm.requestFullscreen(); } 
+            else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); } 
+            else if (docElm.webkitRequestFullscreen) { docElm.webkitRequestFullscreen(); } 
+            else if (docElm.msRequestFullscreen) { docElm.msRequestFullscreen(); }
+        }
+
+        function exitFullscreenSistem() {
+            if (document.exitFullscreen) { document.exitFullscreen(); } 
+            else if (document.mozCancelFullScreen) { document.mozCancelFullScreen(); } 
+            else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); } 
+            else if (document.msExitFullscreen) { document.msExitFullscreen(); }
         }
 
         function handleViolation(reason) {
@@ -157,11 +237,9 @@
                 return;
             }
 
-            // Kunci state penanganan agar tidak tumpang tindih saat animasi modal berjalan
             isProcessingSubmit = true; 
             cheatCount++;
             
-            // Update UI
             const statusBox = document.getElementById('statusPelanggaranBox');
             if (statusBox) {
                 statusBox.innerText = `Pelanggaran: ${cheatCount} / ${maxViolations}`;
@@ -170,9 +248,12 @@
 
             if (cheatCount >= maxViolations) {
                 document.getElementById('cheatModalTitle').innerText = "🚨 AKUN ANDA DIBLOKIR";
-                document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Jawaban Anda saat ini otomatis dikirim ke server.</strong>";
-                document.getElementById('btnConfirmCheat').innerText = "KEMBALI KE LOGIN";
+                document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Mengunci jawaban dan menyelesaikan sesi ujian Anda...</strong>";
                 
+                const btnCheat = document.getElementById('btnConfirmCheat');
+                btnCheat.innerText = "LIHAT STATUS";
+                btnCheat.disabled = false; 
+
                 let k = document.getElementById('pilihKelas').value;
                 let m = document.getElementById('pilihMapel').value;
                 localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
@@ -182,7 +263,7 @@
             } else {
                 document.getElementById('cheatModalTitle').innerText = "⚠️ PERINGATAN KECURANGAN";
                 document.getElementById('cheatModalBody').innerHTML = `Peringatan [${cheatCount}/${maxViolations}]:<br><strong>Dilarang ${reason}</strong>`;
-                document.getElementById('btnConfirmCheat').innerText = "SAYA MENGERTI, LANJUTKAN UJIAN";
+                document.getElementById('btnConfirmCheat').innerText = "SAYA MENGERTI, MASUK FULLSCREEN LAGI";
                 
                 bsCheatModal.show();
             }
@@ -190,42 +271,59 @@
 
         function tutupModalPeringatan() {
             if (cheatCount >= maxViolations) {
-                location.reload();
+                exitFullscreenSistem();
+                tampilkanHalamanSukses(true);
             } else {
                 bsCheatModal.hide();
-                // Buka kembali pengunci detektor setelah modal tertutup sempurna demi stabilitas fokus browser
+                requestFullscreenSistem(); 
                 setTimeout(function() {
                     isProcessingSubmit = false; 
-                }, 500); 
+                }, 700); 
             }
         }
 
-        // --- FUNGSI LOGIN ---
         function login() {
-            let u = document.getElementById('u').value.trim();
-            let p = document.getElementById('p').value.trim();
+            const inputU = document.getElementById('u');
+            const inputP = document.getElementById('p');
+
+            if (!inputU || !inputP) {
+                alert("🚨 EROR INTERNAL HTML:\nElemen input tidak ditemukan.");
+                return;
+            }
+
+            let u = inputU.value.trim();
+            let p = inputP.value.trim();
             const btn = document.getElementById('btnLogin');
             
             if(u === "" || p === "") { alert("Isi Username & Password!"); return; }
             
-            btn.innerText = "Memverifikasi...";
-            btn.disabled = true;
+            if (btn) {
+                btn.innerText = "Memverifikasi...";
+                btn.disabled = true;
+            }
 
             const loginCallback = "handleLoginRes_" + Math.floor(Math.random() * 100000);
             
             window[loginCallback] = function(res) {
-                document.getElementById(loginCallback).remove();
+                const scriptElement = document.getElementById(loginCallback);
+                if(scriptElement) scriptElement.remove();
                 delete window[loginCallback];
                 
-                btn.innerText = "MASUK";
-                btn.disabled = false;
+                if (btn) {
+                    btn.innerText = "MASUK";
+                    btn.disabled = false;
+                }
                 
-                if(res.status === "success") {
+                if(res && (res.status === "success" || res.status === "sukses" || res.nama)) {
                     usernameLogin = u;
                     passwordLogin = p;
+                    namaSiswaAsli = res.nama || u; 
                     isProcessingSubmit = false; 
                     
-                    if(res.kelas) { document.getElementById('pilihKelas').value = res.kelas; }
+                    if(res.kelas) { 
+                        const elemKelas = document.getElementById('pilihKelas');
+                        if(elemKelas) elemKelas.value = res.kelas.toString().trim(); 
+                    }
                     pindahHalaman('pilihPage');
                 } else {
                     alert("Login Gagal: " + (res.message || "Username atau Password salah!"));
@@ -237,16 +335,18 @@
             scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiLogin&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&prefix=${loginCallback}`;
             
             scriptTag.onerror = function() {
-                btn.innerText = "MASUK";
-                btn.disabled = false;
-                alert("Gagal terhubung ke server! Periksa koneksi internet HP siswa.");
+                if (btn) {
+                    btn.innerText = "MASUK";
+                    btn.disabled = false;
+                }
+                alert("Gagal terhubung ke server! Periksa jaringan atau URL Deployment Anda.");
                 scriptTag.remove();
             };
 
             document.body.appendChild(scriptTag);
         }
 
-        // AMBIL SOAL MENGGUNAKAN METODE JSONP BYPASS
+        // PERBAIKAN TOTAL: Mengatur sinkronisasi penuh dari data Spreadsheet. Jika server mengizinkan masuk, proteksi lokal otomatis dilepas.
         function mulaiUjian() {
             let k = document.getElementById('pilihKelas').value;
             let m = document.getElementById('pilihMapel').value;
@@ -259,20 +359,36 @@
             btn.innerText = "Menghubungkan ke Server...";
             btn.disabled = true;
 
+            requestFullscreenSistem();
+            
+            setTimeout(function() {
+                tinggiLayarAsli = window.innerHeight;
+            }, 500);
+
             const callbackName = "handleDataSoal_" + Math.floor(Math.random() * 100000);
             window[callbackName] = function(res) {
                 document.getElementById(callbackName).remove();
                 delete window[callbackName];
                 
-                btn.innerText = "MULAI UJIAN";
-                btn.disabled = false;
-                
                 if(res.status === "error") {
+                    // JALUR KUNCI MATI SERVER: Jika di server terbukti melanggar >= 2, barulah proteksi lokal diaktifkan permanen
+                    if (res.message && res.message.includes("DIBLOKIR")) {
+                        localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
+                    }
                     alert("Eror: " + res.message);
+                    btn.innerText = "MULAI UJIAN";
+                    btn.disabled = false;
+                    exitFullscreenSistem(); 
                 } else if(res.data.length === 0) {
                     alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
+                    btn.innerText = "MULAI UJIAN";
+                    btn.disabled = false;
+                    exitFullscreenSistem(); 
                 } else {
+                    // JALUR BEBAS SERVER: Jika server sukses mengirim soal (berarti di spreadsheet pelanggaran sudah kosong/0),
+                    // hapus paksa sisa tanda blokir lama yang tertinggal di browser HP ini.
                     localStorage.removeItem(`blocked_${usernameLogin}_${k}_${m}`);
+                    
                     bankSoal = res.data;
                     isProcessingSubmit = false; 
                     
@@ -290,12 +406,15 @@
                     }
 
                     const namaBox = document.getElementById('namaPesertaUjian');
-                    if (namaBox) { namaBox.innerText = usernameLogin; }
+                    if (namaBox) { namaBox.innerText = namaSiswaAsli || usernameLogin; }
 
                     currentIdx = 0;
                     pindahHalaman('ujianPage');
                     aktifkanCheatDetector();
                     renderSoal();
+
+                    btn.innerText = "MULAI UJIAN";
+                    btn.disabled = false;
                 }
             };
 
@@ -306,7 +425,8 @@
             scriptTag.onerror = function() {
                 btn.innerText = "MULAI UJIAN";
                 btn.disabled = false;
-                alert("Gagal mengunduh soal! Periksa koneksi internet atau parameter ujian.");
+                alert("Gagal mengunduh soal! Periksa koneksi internet.");
+                exitFullscreenSistem(); 
                 scriptTag.remove();
             };
 
@@ -332,19 +452,28 @@
         }
 
         function renderSoal() {
-            const soal = bankSoal[currentIdx];
-            document.getElementById('nomer-soal').innerText = "Soal No. " + (currentIdx + 1) + " [" + soal.jenis + "]";
-            document.getElementById('pertanyaanText').innerText = soal.tanya;
+            const Math_Reality = bankSoal[currentIdx];
+            document.getElementById('nomer-soal').innerText = "Soal No. " + (currentIdx + 1) + " [" + Math_Reality.jenis + "]";
+            document.getElementById('pertanyaanText').innerText = Math_Reality.tanya;
             
-            let htmlGambar = soal.gambar ? `<img src="${soal.gambar}" class="img-fluid mb-3 rounded shadow-sm">` : "";
-            let tersimpan = localStorage.getItem("soal_" + soal.id);
+            let htmlGambar = Math_Reality.gambar ? `<img src="${Math_Reality.gambar}" class="img-fluid mb-3 rounded shadow-sm">` : "";
+            let tersimpan = localStorage.getItem("soal_" + Math_Reality.id);
             let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
             
-            let opsiTersedia = (soal.jenis === 'BS') ? ['a', 'b'] : ['a', 'b', 'c', 'd'];
+            let opsiTersedia = (Math_Reality.jenis === 'BS') ? ['a', 'b'] : ['a', 'b', 'c', 'd'];
             let htmlOpsi = opsiTersedia.map(p => {
                 const isSelected = pilihan.includes(p) ? "selected" : "";
-                return `<div class="opsi-container ${isSelected}" onclick="simpanJawaban('${soal.id}', '${p}')">
-                            <strong>${p.toUpperCase()}.</strong> ${soal[p] || ""}
+                let kontenOpsi = Math_Reality[p] ? Math_Reality[p].toString().trim() : "";
+                let isiKontenOpsi = "";
+
+                if (kontenOpsi.toLowerCase().startsWith("data:image/") || kontenOpsi.toLowerCase().startsWith("http")) {
+                    isiKontenOpsi = `<img src="${kontenOpsi}" class="img-fluid img-opsi shadow-sm" onerror="this.onerror=null; this.parentElement.innerHTML+=' [Gambar Gagal Dimuat]';">`;
+                } else {
+                    isiKontenOpsi = kontenOpsi;
+                }
+                
+                return `<div class="opsi-container ${isSelected}" onclick="simpanJawaban('${Math_Reality.id}', '${p}')">
+                            <strong>${p.toUpperCase()}.</strong> ${isiKontenOpsi}
                         </div>`;
             }).join('');
             
@@ -367,9 +496,21 @@
             window.scrollTo(0, 0);
         }
 
-        function konfirmasiSelesai() {
-            if(!confirm("Yakin ingin menyelesaikan ujian?")) return;
+                function konfirmasiSelesai() {
+            // Cukup panggil modal Bootstrap tanpa memicu window blur bawaan browser
+            let konfirmasiModal = new bootstrap.Modal(document.getElementById('konfirmasiSelesaiModal'));
+            konfirmasiModal.show();
+        }
+
+        function eksekusiSelesaiUjian() {
+            // Sembunyikan modal konfirmasi terlebih dahulu
+            let modalEl = document.getElementById('konfirmasiSelesaiModal');
+            let modalInstance = bootstrap.Modal.getInstance(modalEl);
+            if (modalInstance) modalInstance.hide();
+
+            // Set status pengiriman aktif lalu keluar fullscreen secara legal
             isProcessingSubmit = true; 
+            exitFullscreenSistem(); 
             kirimKeServerOtomatis();
         }
 
@@ -391,47 +532,65 @@
                 cheatLog: cheatCount
             };
 
-            const btnSelesai = document.getElementById('btnSelesai');
-            if (btnSelesai) {
-                btnSelesai.innerText = "Mengirim...";
-                btnSelesai.disabled = true;
-            }
-
             fetch(DEPLOY_WEB_APP_URL, {
                 method: "POST",
                 mode: "no-cors", 
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
-            })
-            .then(() => {
-                showSuccessMessage("Jawaban berhasil dikirim."); 
-                
-                for (let key in localStorage) {
-                    if (key.startsWith("soal_")) {
-                        localStorage.removeItem(key);
-                    }
-                }
-                
-                if(cheatCount < maxViolations) {
-                    setTimeout(() => {
-                        location.reload();
-                    }, 2000);
-                }
-            })
-            .catch(err => {
-                alert("Koneksi bermasalah saat mengirim nilai! Cari sinyal stabil lalu tekan SELESAI lagi. Detil: " + err);
-                if (btnSelesai) {
-                    btnSelesai.innerText = "SELESAI";
-                    btnSelesai.disabled = false;
-                }
-                if(cheatCount < maxViolations) isProcessingSubmit = false; 
             });
+
+            if(cheatCount < maxViolations) {
+                showSuccessMessage("Jawaban berhasil dikirim."); 
+                setTimeout(() => { tampilkanHalamanSukses(false); }, 1000);
+            }
+        }
+
+        function tampilkanHalamanSukses(isBlocked) {
+            Object.keys(localStorage).forEach(key => {
+                if (key.startsWith("soal_")) {
+                    localStorage.removeItem(key);
+                }
+            });
+
+            if (isBlocked) {
+                document.getElementById('teksStatusSukses').innerHTML = "<span class='text-danger fw-bold'>Aplikasi terkunci otomatis karena pelanggaran batas keluar layar!</span> Jawaban Anda telah dikirim ke server.";
+                document.getElementById('suksesPage').querySelector('.card').style.borderTop = "5px solid #dc3545";
+                
+                document.getElementById('ikonStatusSukses').className = "fs-1 text-danger";
+                document.getElementById('ikonStatusSukses').innerText = "⚠️";
+                
+                document.getElementById('judulStatusSukses').className = "text-danger fw-bold mb-3";
+                document.getElementById('judulStatusSukses').innerText = "Aplikasi Terkunci";
+                
+                document.getElementById('petunjukStatusSukses').className = "p-3 bg-danger bg-opacity-10 text-danger rounded small fw-bold";
+                document.getElementById('petunjukStatusSukses').innerText = "Harap segera membawa HP Anda dan menemui OPERATOR atau GURU PENGAWAS untuk membuka kunci sesi ujian!";
+            } else {
+                document.getElementById('teksStatusSukses').innerText = "Jawaban ujian Anda berhasil diterima dan direkap oleh server.";
+                document.getElementById('suksesPage').querySelector('.card').style.borderTop = "5px solid #198754";
+                
+                document.getElementById('ikonStatusSukses').className = "fs-1 text-success";
+                document.getElementById('ikonStatusSukses').innerText = "✓";
+                
+                document.getElementById('judulStatusSukses').className = "text-success fw-bold mb-3";
+                document.getElementById('judulStatusSukses').innerText = "Ujian Selesai!";
+                
+                document.getElementById('petunjukStatusSukses').className = "p-3 bg-light rounded text-muted small";
+                document.getElementById('petunjukStatusSukses').innerText = "Silakan letakkan HP Anda di meja atau tunjukkan halaman ini kepada pengawas ujian sebagai bukti.";
+            }
+
+            if(bsCheatModal) bsCheatModal.hide();
+            pindahHalaman('suksesPage');
         }
 
         function showSuccessMessage(message) {
             const alertBox = document.getElementById('alertBox');
-            document.getElementById('msgText').innerText = message;
-            alertBox.classList.remove('d-none');
+            if (alertBox) {
+                document.getElementById('msgText').innerText = message;
+                alertBox.classList.remove('d-none');
+                setTimeout(() => {
+                    alertBox.classList.add('d-none');
+                }, 3000);
+            }
         }
     </script>
 </body>

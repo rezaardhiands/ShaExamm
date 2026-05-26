@@ -80,7 +80,7 @@
             </select>
             <label class="small text-muted">Pilih Mapel:</label>
             <select id="pilihMapel" class="form-select mb-2">
-            	<option value="">pilih mapel</option>
+            	<option value="COBA">COBA</option>
         		<option value="IPA">IPA</option>
       		    <option value="IPS">IPS</option>
   		        <option value="PAI">PAI</option>
@@ -93,8 +93,6 @@
   		        <option value="Prakarya">Prakarya</option>
  		        <option value="PKN">PKN</option>
   		        <option value="Matematika">Matematika</option>
-                <option value="KWU">KWU</option>
-                <option value="Seni Budaya">Seni Budaya</option>
             </select>
             <label class="small text-muted">Token Ujian:</label>
             <input id="inputToken" class="form-control mb-3" placeholder="Token Ujian">
@@ -146,6 +144,7 @@
         let bsCheatModal = null; 
         let violationTimeout = null; 
         let tinggiLayarAsli = 0;
+        let statusKioskModeActive = false;
 
         function aktifkanCheatDetector() {
             bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
@@ -194,8 +193,8 @@
                         detikLuarFokus = 0; 
                     }
 
-                    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-                    const isLayarBerubah = tinggiLayarAsli > 0 && (window.innerHeight < tinggiLayarAsli);
+                    const isFullscreen = statusKioskModeActive || document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                    const isLayarBerubah = tinggiLayarAsli > 0 && (window.innerHeight < (tinggiLayarAsli - 30));
 
                     if (!isFullscreen || isLayarBerubah) {
                         if (violationTimeout) clearTimeout(violationTimeout);
@@ -213,13 +212,14 @@
         function handleFullscreenExitChange() {
             const isExam = document.getElementById('ujianPage').classList.contains('active');
             if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement && !document.msFullscreenElement && isExam) {
-                if (!isProcessingSubmit) {
+                if (!isProcessingSubmit && !statusKioskModeActive) {
                     handleViolation("Keluar dari Mode Layar Penuh (Fullscreen)!");
                 }
             }
         }
 
         function requestFullscreenSistem() {
+            statusKioskModeActive = true;
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); } 
             else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); } 
@@ -228,6 +228,7 @@
         }
 
         function exitFullscreenSistem() {
+            statusKioskModeActive = false;
             if (document.exitFullscreen) { document.exitFullscreen(); } 
             else if (document.mozCancelFullScreen) { document.mozCancelFullScreen(); } 
             else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); } 
@@ -348,7 +349,6 @@
             document.body.appendChild(scriptTag);
         }
 
-        // PERBAIKAN TOTAL: Mengatur sinkronisasi penuh dari data Spreadsheet. Jika server mengizinkan masuk, proteksi lokal otomatis dilepas.
         function mulaiUjian() {
             let k = document.getElementById('pilihKelas').value;
             let m = document.getElementById('pilihMapel').value;
@@ -365,7 +365,7 @@
             
             setTimeout(function() {
                 tinggiLayarAsli = window.innerHeight;
-            }, 500);
+            }, 1200);
 
             const callbackName = "handleDataSoal_" + Math.floor(Math.random() * 100000);
             window[callbackName] = function(res) {
@@ -373,7 +373,6 @@
                 delete window[callbackName];
                 
                 if(res.status === "error") {
-                    // JALUR KUNCI MATI SERVER: Jika di server terbukti melanggar >= 2, barulah proteksi lokal diaktifkan permanen
                     if (res.message && res.message.includes("DIBLOKIR")) {
                         localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
                     }
@@ -381,14 +380,12 @@
                     btn.innerText = "MULAI UJIAN";
                     btn.disabled = false;
                     exitFullscreenSistem(); 
-                } else if(res.data.length === 0) {
+                } else if(!res.data || res.data.length === 0) {
                     alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
                     btn.innerText = "MULAI UJIAN";
                     btn.disabled = false;
                     exitFullscreenSistem(); 
                 } else {
-                    // JALUR BEBAS SERVER: Jika server sukses mengirim soal (berarti di spreadsheet pelanggaran sudah kosong/0),
-                    // hapus paksa sisa tanda blokir lama yang tertinggal di browser HP ini.
                     localStorage.removeItem(`blocked_${usernameLogin}_${k}_${m}`);
                     
                     bankSoal = res.data;
@@ -412,8 +409,11 @@
 
                     currentIdx = 0;
                     pindahHalaman('ujianPage');
-                    aktifkanCheatDetector();
                     renderSoal();
+
+                    setTimeout(function() {
+                        aktifkanCheatDetector();
+                    }, 3000);
 
                     btn.innerText = "MULAI UJIAN";
                     btn.disabled = false;
@@ -498,19 +498,16 @@
             window.scrollTo(0, 0);
         }
 
-                function konfirmasiSelesai() {
-            // Cukup panggil modal Bootstrap tanpa memicu window blur bawaan browser
+        function konfirmasiSelesai() {
             let konfirmasiModal = new bootstrap.Modal(document.getElementById('konfirmasiSelesaiModal'));
             konfirmasiModal.show();
         }
 
         function eksekusiSelesaiUjian() {
-            // Sembunyikan modal konfirmasi terlebih dahulu
             let modalEl = document.getElementById('konfirmasiSelesaiModal');
             let modalInstance = bootstrap.Modal.getInstance(modalEl);
             if (modalInstance) modalInstance.hide();
 
-            // Set status pengiriman aktif lalu keluar fullscreen secara legal
             isProcessingSubmit = true; 
             exitFullscreenSistem(); 
             kirimKeServerOtomatis();

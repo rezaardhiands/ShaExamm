@@ -104,6 +104,11 @@
 <div id="ujianPage" class="page container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-white rounded shadow-sm">
         <span id="namaPesertaUjian" class="fw-bold text-secondary">Siswa</span>
+        
+        <button id="btnRefreshSoal" class="btn btn-warning btn-sm fw-bold shadow-sm" onclick="jalankanRefreshManual()">
+            🔄 Refresh Soal
+        </button>
+
         <div id="statusPelanggaranBox" class="badge bg-success cheat-counter-badge">
             Pelanggaran: 0 / 2
         </div>
@@ -311,9 +316,20 @@
                 if (res.message && res.message.includes("DIBLOKIR")) {
                     localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
                 }
-                alert("Eror: " + res.message);
+                
+                // REVISI POPUP TOKEN SALAH / BLOKIR (Menggunakan cheatModal agar muncul di WebView Android)
+                document.getElementById('cheatModalTitle').innerText = "🚨 GAGAL MEMULAI UJIAN";
+                document.getElementById('cheatModalBody').innerHTML = `<span class="text-danger fw-bold">${res.message}</span><br><br>Periksa kembali Kelas, Mapel, atau Token yang diberikan oleh guru pengawas.`;
+                document.getElementById('btnConfirmCheat').innerText = "COBA LAGI";
+                
+                if(!bsCheatModal) {
+                    bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+                }
+                bsCheatModal.show();
+
                 btn.innerText = "MULAI UJIAN";
                 btn.disabled = false;
+                isProcessingSubmit = false; 
             } else if(!res.data || res.data.length === 0) {
                 alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
                 btn.innerText = "MULAI UJIAN";
@@ -441,7 +457,14 @@
         kirimKeServerOtomatis();
     }
 
-    function kirimKeServerOtomatis() {
+    // REVISI TOTAL METODE SUBMIT: MENGGUNAKAN ASYNC/AWAIT DAN MENGHAPUS NO-CORS
+    async function kirimKeServerOtomatis() {
+        const btnSelesai = document.getElementById('btnSelesai');
+        if(btnSelesai) {
+            btnSelesai.innerText = "Mengirim Jawaban...";
+            btnSelesai.disabled = true;
+        }
+
         let jawaban = {};
         bankSoal.forEach(s => {
             jawaban[s.id] = localStorage.getItem("soal_" + s.id) || "[]";
@@ -459,16 +482,41 @@
             cheatLog: cheatCount
         };
 
-        fetch(DEPLOY_WEB_APP_URL, {
-            method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
+        try {
+            const response = await fetch(DEPLOY_WEB_APP_URL, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: JSON.stringify(payload)
+            });
 
-        if(cheatCount < maxViolations) {
-            showSuccessMessage("Jawaban berhasil dikirim.");
-            setTimeout(() => { tampilkanHalamanSukses(false); }, 1000);
+            const result = await response.json();
+
+            if (result.status === "complete" || result.status === "success") {
+                if(cheatCount < maxViolations) {
+                    showSuccessMessage("Jawaban berhasil dikirim.");
+                    setTimeout(() => { tampilkanHalamanSukses(false); }, 1000);
+                }
+            } else {
+                alert("Gagal menyimpan ke server: " + (result.message || "Eror tidak diketahui"));
+                if(btnSelesai) { btnSelesai.disabled = false; btnSelesai.innerText = "SELESAI"; }
+                isProcessingSubmit = false;
+            }
+
+        } catch (error) {
+            console.error("Error submit:", error);
+            
+            // Mengalihkan kegagalan jaringan/timeout server ke modal merah agar siswa bisa klik kirim ulang
+            document.getElementById('cheatModalTitle').innerText = "🚨 GAGAL MENGIRIM DATA";
+            document.getElementById('cheatModalBody').innerHTML = "<span class='text-danger fw-bold'>Koneksi ke server terputus atau antrean penuh!</span><br><br>Jangan tutup halaman ini. Tunggu beberapa saat lalu ketuk tombol <strong>KIRIM ULANG</strong> di bawah.";
+            document.getElementById('btnConfirmCheat').innerText = "KIRIM ULANG JAWABAN";
+            
+            if(!bsCheatModal) {
+                bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+            }
+            bsCheatModal.show();
+
+            if(btnSelesai) { btnSelesai.disabled = false; btnSelesai.innerText = "SELESAI"; }
+            isProcessingSubmit = false;
         }
     }
 
@@ -508,7 +556,6 @@
         if(bsCheatModal) bsCheatModal.hide();
         pindahHalaman('suksesPage');
 
-        // Ini Jembatan Komunikasi yang Memicu Munculnya Tombol KELUAR dari Android Native
         try {
             if (window.AndroidBridge) {
                 AndroidBridge.tampilkanTombolKeluar();
@@ -527,6 +574,59 @@
                 alertBox.classList.add('d-none');
             }, 3000);
         }
+    }
+
+    // FUNGSI AKSI SINKRONISASI REFRESH MANUAL MANUSIAWI
+    function jalankanRefreshManual() {
+        const btn = document.getElementById("btnRefreshSoal");
+        if (!btn || btn.disabled) return;
+
+        btn.innerText = "⏳ Memuat Soal...";
+        btn.className = "btn btn-secondary btn-sm fw-bold shadow-sm";
+        btn.disabled = true;
+
+        let k = document.getElementById('pilihKelas').value;
+        let m = document.getElementById('pilihMapel').value;
+        let t = document.getElementById('inputToken').value;
+
+        const refreshCallback = "handleRefreshSoal_" + Math.floor(Math.random() * 100000);
+        
+        window[refreshCallback] = function(res) {
+            document.getElementById(refreshCallback).remove();
+            delete window[refreshCallback];
+
+            btn.innerText = "🔄 Refresh Soal";
+            btn.className = "btn btn-warning btn-sm fw-bold shadow-sm";
+            btn.disabled = false;
+
+            if (res.status === "error") {
+                alert("Gagal memperbarui soal: " + res.message);
+            } else if (!res.data || res.data.length === 0) {
+                alert("Data soal kosong atau tidak ditemukan!");
+            } else {
+                // Sinkronisasi data utama bankSoal tanpa mengganggu isi LocalStorage jawaban siswa
+                bankSoal = res.data;
+                
+                // Render ulang nomor soal aktif detik ini agar perubahan konten langsung nampak di layar
+                renderSoal();
+                
+                alert("Berhasil menyinkronkan soal terbaru dari guru! Jawaban Anda tetap aman.");
+            }
+        };
+
+        const scriptTag = document.createElement("script");
+        scriptTag.id = refreshCallback;
+        scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${k}&mapel=${m}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${refreshCallback}`;
+
+        scriptTag.onerror = function() {
+            btn.innerText = "🔄 Refresh Soal";
+            btn.className = "btn btn-warning btn-sm fw-bold shadow-sm";
+            btn.disabled = false;
+            alert("Gagal memperbarui soal! Periksa koneksi internet Anda.");
+            scriptTag.remove();
+        };
+
+        document.body.appendChild(scriptTag);
     }
 </script>
 </body>

@@ -52,8 +52,8 @@
     </div>
 </div>
 
-<div id="msgContainer" class="fixed-top p-3" style="z-index: 1050;">
-    <div id="alertBox" class="alert alert-success d-none" role="alert">
+<div id="msgContainer" class="fixed-top p-3" style="z-index: 1050; pointer-events: none;">
+    <div id="alertBox" class="alert alert-success d-none" role="alert" style="pointer-events: auto;">
         <span id="msgText"></span>
     </div>
 </div>
@@ -114,14 +114,16 @@
         <p id="pertanyaanText"></p>
         <div id="opsiBox"></div>
     </div>
-    
+
+    <div id="statusKirimBox" class="alert alert-info d-none mt-3 mb-0" role="alert"></div>
+
     <div class="d-flex justify-content-between align-items-center mt-3 mb-5">
         <button class="btn btn-secondary" onclick="navSoal(-1)">Prev</button>
-        
+
         <button id="btnRefreshSoal" class="btn btn-warning fw-bold shadow-sm" onclick="jalankanRefreshManual()">
             🔄 Refresh Soal
         </button>
-        
+
         <button id="btnNext" class="btn btn-primary" onclick="navSoal(1)">Next</button>
         <button id="btnSelesai" class="btn btn-danger" style="display:none;" onclick="konfirmasiSelesai()">SELESAI</button>
     </div>
@@ -143,52 +145,188 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     // Link deployment sheet terbaru
-    const DEPLOY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxVpuTcXIdHrTc7oggYoPkOonSuTlnqdBq-lDI6g7OGl5zk1ijsM3o1GAzELM-nnUqa7A/exec";
+    const DEPLOY_WEB_APP_URL = "https://script.google.com/a/macros/guru.smp.belajar.id/s/AKfycbxVpuTcXIdHrTc7oggYoPkOonSuTlnqdBq-lDI6g7OGl5zk1ijsM3o1GAzELM-nnUqa7A/exec";
 
     let currentIdx = 0, bankSoal = [], usernameLogin = "", passwordLogin = "", namaSiswaAsli = "";
     let cheatCount = 0;
     const maxViolations = 2;
     let isProcessingSubmit = false;
+    let isModalKonfirmasiOpen = false;
+    let isCheatModalOpen = false;
+    let cheatModalMode = "cheat"; // "cheat" | "retry" | "info"
     let bsCheatModal = null;
     let violationTimeout = null;
+    let cheatDetectorAktif = false;
+    let memoriJawabanDarurat = {};
 
+    // =========================================================================
+    // HELPER PENYIMPANAN LOKAL (LOCALSTORAGE + CADANGAN RAM)
+    // =========================================================================
+    function bacaPenyimpanan(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            return memoriJawabanDarurat[key] !== undefined ? memoriJawabanDarurat[key] : null;
+        }
+    }
+
+    function tulisPenyimpanan(key, value) {
+        memoriJawabanDarurat[key] = value;
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {}
+    }
+
+    function hapusPenyimpanan(key) {
+        delete memoriJawabanDarurat[key];
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {}
+    }
+
+    function getStorageKeyPaket(username, kelas, mapel) {
+        const u = String(username || "").trim().toLowerCase();
+        const k = String(kelas || "").trim().toLowerCase();
+        const m = String(mapel || "").trim().toLowerCase();
+        return `ujian_jwb_${u}_${k}_${m}`;
+    }
+
+    function kumpulkanPaketJawaban() {
+        const k = document.getElementById('pilihKelas')?.value || "";
+        const m = document.getElementById('pilihMapel')?.value || "";
+        const cadangan = muatPaketJawabanLokal(usernameLogin, k, m) || {};
+        const jawaban = {};
+
+        bankSoal.forEach(s => {
+            const raw = bacaPenyimpanan("soal_" + s.id);
+
+            if (raw !== null) {
+                jawaban[s.id] = raw;
+            } else if (cadangan[s.id] !== undefined) {
+                jawaban[s.id] = typeof cadangan[s.id] === "string"
+                    ? cadangan[s.id]
+                    : JSON.stringify(cadangan[s.id]);
+            } else {
+                jawaban[s.id] = "[]";
+            }
+        });
+
+        return jawaban;
+    }
+
+    function simpanPaketJawabanLokal(username, kelas, mapel, jawabanObj) {
+        const key = getStorageKeyPaket(username, kelas, mapel);
+        tulisPenyimpanan(key, JSON.stringify({
+            savedAt: Date.now(),
+            jawaban: jawabanObj || {}
+        }));
+    }
+
+    function muatPaketJawabanLokal(username, kelas, mapel) {
+        try {
+            const key = getStorageKeyPaket(username, kelas, mapel);
+            const raw = bacaPenyimpanan(key);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed.jawaban === "object") ? parsed.jawaban : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function hapusSemuaJawabanLokal(username, kelas, mapel) {
+        const key = getStorageKeyPaket(username, kelas, mapel);
+        hapusPenyimpanan(key);
+
+        Object.keys(memoriJawabanDarurat).forEach(k => {
+            if (k.startsWith("soal_")) delete memoriJawabanDarurat[k];
+        });
+
+        try {
+            Object.keys(localStorage).forEach(k => {
+                if (k.startsWith("soal_")) {
+                    localStorage.removeItem(k);
+                }
+            });
+        } catch (e) {}
+    }
+
+    function bersihkanKeySoalLama() {
+        Object.keys(memoriJawabanDarurat).forEach(k => {
+            if (k.startsWith("soal_")) delete memoriJawabanDarurat[k];
+        });
+        try {
+            Object.keys(localStorage).forEach(k => {
+                if (k.startsWith("soal_")) {
+                    localStorage.removeItem(k);
+                }
+            });
+        } catch (e) {}
+    }
+
+    function bersihkanTimerPelanggaran() {
+        if (violationTimeout) {
+            clearTimeout(violationTimeout);
+            violationTimeout = null;
+        }
+    }
+
+    function tampilkanCheatModal() {
+        const el = document.getElementById('cheatModal');
+        if (!bsCheatModal) {
+            bsCheatModal = new bootstrap.Modal(el);
+        }
+        isCheatModalOpen = true;
+        bersihkanTimerPelanggaran();
+        bsCheatModal.show();
+    }
+
+    // =========================================================================
+    // ANTI-CHEAT DETECTOR (STABIL UNTUK WEBVIEW)
+    // =========================================================================
     function aktifkanCheatDetector() {
-        bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+        if (!bsCheatModal) {
+            bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
+        }
+        if (cheatDetectorAktif) return;
+        cheatDetectorAktif = true;
 
         document.addEventListener("visibilitychange", function() {
             const isExam = document.getElementById('ujianPage').classList.contains('active');
-            if (document.visibilityState === "hidden" && isExam) {
+            if (document.visibilityState === "hidden" && isExam && !isProcessingSubmit && !isModalKonfirmasiOpen && !isCheatModalOpen) {
                 handleViolation("Membuka tab baru / Keluar aplikasi!");
             }
         });
 
         window.addEventListener("blur", function() {
             const isExam = document.getElementById('ujianPage').classList.contains('active');
-            if (isExam && !isProcessingSubmit) {
-                if (violationTimeout) clearTimeout(violationTimeout);
+            if (isExam && !isProcessingSubmit && !isModalKonfirmasiOpen && !isCheatModalOpen) {
+                bersihkanTimerPelanggaran();
                 violationTimeout = setTimeout(function() {
-                    handleViolation("Membuka panel notifikasi / Kehilangan fokus layar!");
-                }, 7000);
+                    const masihUjian = document.getElementById('ujianPage').classList.contains('active');
+                    if (masihUjian && !isProcessingSubmit && !isModalKonfirmasiOpen && !isCheatModalOpen) {
+                        handleViolation("Membuka panel notifikasi / Kehilangan fokus layar!");
+                    }
+                }, 3000);
             }
         });
 
         window.addEventListener("focus", function() {
-            if (violationTimeout) {
-                clearTimeout(violationTimeout);
-                violationTimeout = null;
-            }
+            bersihkanTimerPelanggaran();
         });
     }
 
     function triggerNativeViolation(reason) {
+        if (isModalKonfirmasiOpen || isCheatModalOpen) return;
         handleViolation(reason);
     }
 
     function handleViolation(reason) {
-        if(!document.getElementById('ujianPage').classList.contains('active') || isProcessingSubmit) {
+        if (!document.getElementById('ujianPage').classList.contains('active') || isProcessingSubmit || isCheatModalOpen) {
             return;
         }
 
+        bersihkanTimerPelanggaran();
         isProcessingSubmit = true;
         cheatCount++;
 
@@ -199,39 +337,63 @@
         }
 
         if (cheatCount >= maxViolations) {
+            cheatModalMode = "cheat";
             document.getElementById('cheatModalTitle').innerText = "🚨 AKUN ANDA DIBLOKIR";
-            document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Mengunci jawaban dan menyelesaikan sesi ujian Anda...</strong>";
+            document.getElementById('cheatModalBody').innerHTML = "Batas pelanggaran habis! Akun Anda diblokir untuk ujian ini.<br><br><strong>Mengunci jawaban dan mengirim sesi ujian Anda ke server...</strong>";
 
             const btnCheat = document.getElementById('btnConfirmCheat');
-            btnCheat.innerText = "LIHAT STATUS";
-            btnCheat.disabled = false;
+            btnCheat.innerText = "SEDANG MENGIRIM...";
+            btnCheat.disabled = true;
 
             let k = document.getElementById('pilihKelas').value;
             let m = document.getElementById('pilihMapel').value;
-            localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
+            tulisPenyimpanan(`blocked_${usernameLogin}_${k}_${m}`, "true");
 
-            bsCheatModal.show();
+            tampilkanCheatModal();
             kirimKeServerOtomatis();
         } else {
+            cheatModalMode = "cheat";
             document.getElementById('cheatModalTitle').innerText = "⚠️ PERINGATAN KECURANGAN";
             document.getElementById('cheatModalBody').innerHTML = `Peringatan [${cheatCount}/${maxViolations}]:<br><strong>Dilarang ${reason}</strong>`;
-            document.getElementById('btnConfirmCheat').innerText = "SAYA MENGERTI, KEMBALI KE UJIAN";
+            const btnCheat = document.getElementById('btnConfirmCheat');
+            btnCheat.innerText = "SAYA MENGERTI, KEMBALI KE UJIAN";
+            btnCheat.disabled = false;
 
-            bsCheatModal.show();
+            tampilkanCheatModal();
         }
     }
 
     function tutupModalPeringatan() {
+        if (cheatModalMode === "retry") {
+            isCheatModalOpen = false;
+            if (bsCheatModal) bsCheatModal.hide();
+            isProcessingSubmit = true;
+            kirimKeServerOtomatis();
+            return;
+        }
+
+        if (cheatModalMode === "info") {
+            isCheatModalOpen = false;
+            if (bsCheatModal) bsCheatModal.hide();
+            isProcessingSubmit = false;
+            return;
+        }
+
         if (cheatCount >= maxViolations) {
+            isCheatModalOpen = false;
             tampilkanHalamanSukses(true);
         } else {
-            bsCheatModal.hide();
+            isCheatModalOpen = false;
+            if (bsCheatModal) bsCheatModal.hide();
             setTimeout(function() {
                 isProcessingSubmit = false;
             }, 500);
         }
     }
 
+    // =========================================================================
+    // LOGIN & AMBIL SOAL
+    // =========================================================================
     function login() {
         const inputU = document.getElementById('u');
         const inputP = document.getElementById('p');
@@ -245,7 +407,7 @@
         let p = inputP.value.trim();
         const btn = document.getElementById('btnLogin');
 
-        if(u === "" || p === "") { alert("Isi Username & Password!"); return; }
+        if (u === "" || p === "") { alert("Isi Username & Password!"); return; }
 
         if (btn) {
             btn.innerText = "Memverifikasi...";
@@ -256,7 +418,7 @@
 
         window[loginCallback] = function(res) {
             const scriptElement = document.getElementById(loginCallback);
-            if(scriptElement) scriptElement.remove();
+            if (scriptElement) scriptElement.remove();
             delete window[loginCallback];
 
             if (btn) {
@@ -264,19 +426,19 @@
                 btn.disabled = false;
             }
 
-            if(res && (res.status === "success" || res.status === "sukses" || res.nama)) {
+            if (res && (res.status === "success" || res.status === "sukses" || res.nama)) {
                 usernameLogin = u;
                 passwordLogin = p;
                 namaSiswaAsli = res.nama || u;
                 isProcessingSubmit = false;
 
-                if(res.kelas) {
+                if (res.kelas) {
                     const elemKelas = document.getElementById('pilihKelas');
-                    if(elemKelas) elemKelas.value = res.kelas.toString().trim();
+                    if (elemKelas) elemKelas.value = res.kelas.toString().trim();
                 }
                 pindahHalaman('pilihPage');
             } else {
-                alert("Login Gagal: " + (res.message || "Username atau Password salah!"));
+                alert("Login Gagal: " + ((res && res.message) || "Username atau Password salah!"));
             }
         };
 
@@ -310,41 +472,51 @@
 
         const callbackName = "handleDataSoal_" + Math.floor(Math.random() * 100000);
         window[callbackName] = function(res) {
-            document.getElementById(callbackName).remove();
+            const el = document.getElementById(callbackName);
+            if (el) el.remove();
             delete window[callbackName];
 
-            if(res.status === "error") {
+            if (res.status === "error") {
                 if (res.message && res.message.includes("DIBLOKIR")) {
-                    localStorage.setItem(`blocked_${usernameLogin}_${k}_${m}`, "true");
+                    tulisPenyimpanan(`blocked_${usernameLogin}_${k}_${m}`, "true");
                 }
-                
-                // REVISI POPUP TOKEN SALAH / BLOKIR (Menggunakan cheatModal agar muncul di WebView Android)
+
+                cheatModalMode = "info";
                 document.getElementById('cheatModalTitle').innerText = "🚨 GAGAL MEMULAI UJIAN";
                 document.getElementById('cheatModalBody').innerHTML = `<span class="text-danger fw-bold">${res.message}</span><br><br>Periksa kembali Kelas, Mapel, atau Token yang diberikan oleh guru pengawas.`;
-                document.getElementById('btnConfirmCheat').innerText = "COBA LAGI";
-                
-                if(!bsCheatModal) {
-                    bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
-                }
-                bsCheatModal.show();
+                const btnCheat = document.getElementById('btnConfirmCheat');
+                btnCheat.innerText = "COBA LAGI";
+                btnCheat.disabled = false;
+
+                tampilkanCheatModal();
 
                 btn.innerText = "MULAI UJIAN";
                 btn.disabled = false;
-                isProcessingSubmit = false; 
-            } else if(!res.data || res.data.length === 0) {
+                isProcessingSubmit = false;
+            } else if (!res.data || res.data.length === 0) {
                 alert("Soal tidak ditemukan! Periksa kembali Kelas & Mapel.");
                 btn.innerText = "MULAI UJIAN";
                 btn.disabled = false;
             } else {
-                localStorage.removeItem(`blocked_${usernameLogin}_${k}_${m}`);
+                hapusPenyimpanan(`blocked_${usernameLogin}_${k}_${m}`);
 
                 bankSoal = res.data;
                 isProcessingSubmit = false;
+                isCheatModalOpen = false;
+                isModalKonfirmasiOpen = false;
 
-                for (let key in localStorage) {
-                    if (key.startsWith("soal_")) {
-                        localStorage.removeItem(key);
-                    }
+                bersihkanKeySoalLama();
+
+                const cadanganLokal = muatPaketJawabanLokal(usernameLogin, k, m);
+                if (cadanganLokal) {
+                    bankSoal.forEach(s => {
+                        if (cadanganLokal[s.id] !== undefined) {
+                            const valStr = typeof cadanganLokal[s.id] === "string"
+                                ? cadanganLokal[s.id]
+                                : JSON.stringify(cadanganLokal[s.id]);
+                            tulisPenyimpanan("soal_" + s.id, valStr);
+                        }
+                    });
                 }
 
                 cheatCount = 0;
@@ -353,6 +525,8 @@
                     statusBox.innerText = `Pelanggaran: 0 / ${maxViolations}`;
                     statusBox.className = "badge bg-success cheat-counter-badge";
                 }
+
+                setStatusKirim("", "info", true);
 
                 const namaBox = document.getElementById('namaPesertaUjian');
                 if (namaBox) { namaBox.innerText = namaSiswaAsli || usernameLogin; }
@@ -369,7 +543,7 @@
 
         const scriptTag = document.createElement("script");
         scriptTag.id = callbackName;
-        scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${k}&mapel=${m}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${callbackName}`;
+        scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${encodeURIComponent(k)}&mapel=${encodeURIComponent(m)}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${callbackName}`;
 
         scriptTag.onerror = function() {
             btn.innerText = "MULAI UJIAN";
@@ -381,12 +555,18 @@
         document.body.appendChild(scriptTag);
     }
 
+    // =========================================================================
+    // SIMPAN JAWABAN & RENDER SOAL (SELARAS BENAR / SALAH UNTUK BS)
+    // =========================================================================
     function simpanJawaban(id, v) {
         let soal = bankSoal.find(s => s.id == id);
-        let tersimpan = localStorage.getItem("soal_" + id);
-        let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
+        if (!soal) return;
 
-        if (soal.jenis === 'PG' || soal.jenis === 'BS') {
+        let tersimpan = bacaPenyimpanan("soal_" + id);
+        let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
+        let jenis = String(soal.jenis || "").trim().toUpperCase();
+
+        if (jenis === 'PG' || jenis === 'BS') {
             pilihan = [v];
         } else {
             if (pilihan.includes(v)) {
@@ -395,23 +575,37 @@
                 pilihan.push(v);
             }
         }
-        localStorage.setItem("soal_" + id, JSON.stringify(pilihan));
+
+        tulisPenyimpanan("soal_" + id, JSON.stringify(pilihan));
+
+        const k = document.getElementById('pilihKelas').value;
+        const m = document.getElementById('pilihMapel').value;
+        simpanPaketJawabanLokal(usernameLogin, k, m, kumpulkanPaketJawaban());
+
         renderSoal();
     }
 
     function renderSoal() {
         const Math_Reality = bankSoal[currentIdx];
-        document.getElementById('nomer-soal').innerText = "Soal No. " + (currentIdx + 1) + " [" + Math_Reality.jenis + "]";
+        if (!Math_Reality) return;
+
+        let jenisSoal = String(Math_Reality.jenis || "").trim().toUpperCase();
+        document.getElementById('nomer-soal').innerText = "Soal No. " + (currentIdx + 1) + " [" + jenisSoal + "]";
         document.getElementById('pertanyaanText').innerText = Math_Reality.tanya;
 
         let htmlGambar = Math_Reality.gambar ? `<img src="${Math_Reality.gambar}" class="img-fluid mb-3 rounded shadow-sm">` : "";
-        let tersimpan = localStorage.getItem("soal_" + Math_Reality.id);
+        let tersimpan = bacaPenyimpanan("soal_" + Math_Reality.id);
         let pilihan = tersimpan ? JSON.parse(tersimpan) : [];
 
-        let opsiTersedia = (Math_Reality.jenis === 'BS') ? ['a', 'b'] : ['a', 'b', 'c', 'd'];
+        let opsiTersedia = (jenisSoal === 'BS') ? ['a', 'b'] : ['a', 'b', 'c', 'd'];
         let htmlOpsi = opsiTersedia.map(p => {
             const isSelected = pilihan.includes(p) ? "selected" : "";
             let kontenOpsi = Math_Reality[p] ? Math_Reality[p].toString().trim() : "";
+
+            if (jenisSoal === 'BS' && !kontenOpsi) {
+                kontenOpsi = (p === 'a') ? "Benar" : "Salah";
+            }
+
             let isiKontenOpsi = "";
 
             if (kontenOpsi.toLowerCase().startsWith("data:image/") || kontenOpsi.toLowerCase().startsWith("http")) {
@@ -431,7 +625,7 @@
     }
 
     function navSoal(step) {
-        if(currentIdx + step >= 0 && currentIdx + step < bankSoal.length) {
+        if (currentIdx + step >= 0 && currentIdx + step < bankSoal.length) {
             currentIdx += step;
             renderSoal();
             window.scrollTo(0, 0);
@@ -444,8 +638,18 @@
         window.scrollTo(0, 0);
     }
 
+    // =========================================================================
+    // PENGIRIMAN JAWABAN: TIMEOUT, RETRY OTOMATIS & STATUS COMPLETE TERVERIFIKASI
+    // =========================================================================
     function konfirmasiSelesai() {
-        let konfirmasiModal = new bootstrap.Modal(document.getElementById('konfirmasiSelesaiModal'));
+        bersihkanTimerPelanggaran();
+        const modalEl = document.getElementById('konfirmasiSelesaiModal');
+        isModalKonfirmasiOpen = true;
+        modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+            isModalKonfirmasiOpen = false;
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+        });
+        let konfirmasiModal = new bootstrap.Modal(modalEl);
         konfirmasiModal.show();
     }
 
@@ -453,26 +657,84 @@
         let modalEl = document.getElementById('konfirmasiSelesaiModal');
         let modalInstance = bootstrap.Modal.getInstance(modalEl);
         if (modalInstance) modalInstance.hide();
+        isModalKonfirmasiOpen = false;
 
         isProcessingSubmit = true;
         kirimKeServerOtomatis();
     }
 
-    // REVISI TOTAL METODE SUBMIT: MENGGUNAKAN ASYNC/AWAIT DAN MENGHAPUS NO-CORS
-    async function kirimKeServerOtomatis() {
-        const btnSelesai = document.getElementById('btnSelesai');
-        if(btnSelesai) {
-            btnSelesai.innerText = "Mengirim Jawaban...";
-            btnSelesai.disabled = true;
+    function jedaMs(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function setStatusKirim(teks, tipe = "info", sembunyikan = false) {
+        const box = document.getElementById('statusKirimBox');
+        if (!box) return;
+        if (sembunyikan || !teks) {
+            box.classList.add('d-none');
+            box.textContent = "";
+            return;
+        }
+        box.className = `alert alert-${tipe} mt-3 mb-0`;
+        box.textContent = teks;
+        box.classList.remove('d-none');
+    }
+
+    async function fetchDenganTimeout(url, options, timeoutMs = 20000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function kirimSatuPercobaan(payload, timeoutMs = 20000) {
+        const response = await fetchDenganTimeout(DEPLOY_WEB_APP_URL, {
+            method: "POST",
+            mode: "cors",
+            redirect: "follow",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(payload)
+        }, timeoutMs);
+
+        const rawText = await response.text();
+        if (!rawText || !rawText.trim()) {
+            throw new Error("Respons server kosong atau terpotong.");
         }
 
-        let jawaban = {};
-        bankSoal.forEach(s => {
-            jawaban[s.id] = localStorage.getItem("soal_" + s.id) || "[]";
-        });
+        let parsed = null;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error("Respons server tidak terbaca sebagai JSON.");
+        }
+
+        return parsed;
+    }
+
+    async function kirimKeServerOtomatis() {
+        const btnSelesai = document.getElementById('btnSelesai');
+        const btnCheat = document.getElementById('btnConfirmCheat');
+
+        if (btnSelesai) {
+            btnSelesai.innerText = "⏳ Mengirim...";
+            btnSelesai.disabled = true;
+        }
+        if (btnCheat && cheatCount >= maxViolations) {
+            btnCheat.innerText = "⏳ MENGIRIM JAWABAN...";
+            btnCheat.disabled = true;
+        }
 
         let k = document.getElementById('pilihKelas').value;
         let m = document.getElementById('pilihMapel').value;
+        let jawaban = kumpulkanPaketJawaban();
+
+        simpanPaketJawabanLokal(usernameLogin, k, m, jawaban);
 
         const payload = {
             action: "apiSubmit",
@@ -483,50 +745,88 @@
             cheatLog: cheatCount
         };
 
+        const MAX_RETRY = 2;
+        const TIMEOUT_MS = 20000;
+        let result = null;
+        let lastError = null;
+        let suksesTerkonfirmasi = false;
+
+        setStatusKirim("Sedang mengirim jawaban ke server (menunggu antrean). Mohon jangan tutup halaman...", "info");
+
         try {
-            const response = await fetch(DEPLOY_WEB_APP_URL, {
-                method: "POST",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify(payload)
-            });
+            for (let percobaan = 1; percobaan <= MAX_RETRY + 1; percobaan++) {
+                try {
+                    if (percobaan > 1) {
+                        if (btnSelesai) btnSelesai.innerText = `⏳ Coba Ulang (${percobaan - 1}/${MAX_RETRY})...`;
+                        setStatusKirim(`Antrean/koneksi sedang padat. Mencoba mengirim ulang (${percobaan}/${MAX_RETRY + 1})...`, "warning");
+                        await jedaMs(1500 * percobaan);
+                    }
 
-            const result = await response.json();
+                    result = await kirimSatuPercobaan(payload, TIMEOUT_MS);
+                    lastError = null;
 
-            if (result.status === "complete" || result.status === "success") {
-                if(cheatCount < maxViolations) {
-                    showSuccessMessage("Jawaban berhasil dikirim.");
-                    setTimeout(() => { tampilkanHalamanSukses(false); }, 1000);
+                    if (result && (result.status === "complete" || result.status === "error")) {
+                        break;
+                    }
+                } catch (err) {
+                    lastError = err;
                 }
-            } else {
-                alert("Gagal menyimpan ke server: " + (result.message || "Eror tidak diketahui"));
-                if(btnSelesai) { btnSelesai.disabled = false; btnSelesai.innerText = "SELESAI"; }
+            }
+
+            if (result && result.status === "complete") {
+                suksesTerkonfirmasi = true;
+                setStatusKirim("✅ Jawaban berhasil diterima server!", "success");
+
+                if (cheatCount >= maxViolations) {
+                    if (btnCheat) {
+                        btnCheat.innerText = "LIHAT STATUS";
+                        btnCheat.disabled = false;
+                    }
+                    tampilkanHalamanSukses(true);
+                } else {
+                    showSuccessMessage("Jawaban berhasil dikirim.");
+                    setTimeout(() => { tampilkanHalamanSukses(false); }, 800);
+                }
+                return;
+            }
+
+            const alasanGagal = (result && result.message)
+                ? result.message
+                : (lastError && lastError.name === "AbortError"
+                    ? "Waktu tunggu habis (antrean server padat)."
+                    : (lastError ? lastError.message : "Koneksi terputus / server sibuk."));
+
+            setStatusKirim(
+                `⚠️ Jawaban belum terkonfirmasi terkirim (${alasanGagal}). Jawaban Anda aman tersimpan di HP ini. Silakan ketuk SELESAI / KIRIM ULANG.`,
+                "danger"
+            );
+
+            cheatModalMode = "retry";
+            document.getElementById('cheatModalTitle').innerText = "🚨 GAGAL MENGIRIM DATA";
+            document.getElementById('cheatModalBody').innerHTML =
+                `<span class='text-danger fw-bold'>${alasanGagal}</span><br><br>Jangan tutup halaman ini. Jawaban Anda tetap aman tersimpan di perangkat. Tunggu beberapa detik lalu ketuk tombol <strong>KIRIM ULANG JAWABAN</strong> di bawah.`;
+            if (btnCheat) {
+                btnCheat.innerText = "KIRIM ULANG JAWABAN";
+                btnCheat.disabled = false;
+            }
+
+            tampilkanCheatModal();
+
+        } finally {
+            if (!suksesTerkonfirmasi) {
+                if (btnSelesai) {
+                    btnSelesai.disabled = false;
+                    btnSelesai.innerText = "SELESAI";
+                }
                 isProcessingSubmit = false;
             }
-
-        } catch (error) {
-            console.error("Error submit:", error);
-            
-            // Mengalihkan kegagalan jaringan/timeout server ke modal merah agar siswa bisa klik kirim ulang
-            document.getElementById('cheatModalTitle').innerText = "🚨 GAGAL MENGIRIM DATA";
-            document.getElementById('cheatModalBody').innerHTML = "<span class='text-danger fw-bold'>Koneksi ke server terputus atau antrean penuh!</span><br><br>Jangan tutup halaman ini. Tunggu beberapa saat lalu ketuk tombol <strong>KIRIM ULANG</strong> di bawah.";
-            document.getElementById('btnConfirmCheat').innerText = "KIRIM ULANG JAWABAN";
-            
-            if(!bsCheatModal) {
-                bsCheatModal = new bootstrap.Modal(document.getElementById('cheatModal'));
-            }
-            bsCheatModal.show();
-
-            if(btnSelesai) { btnSelesai.disabled = false; btnSelesai.innerText = "SELESAI"; }
-            isProcessingSubmit = false;
         }
     }
 
     function tampilkanHalamanSukses(isBlocked) {
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith("soal_")) {
-                localStorage.removeItem(key);
-            }
-        });
+        let k = document.getElementById('pilihKelas').value;
+        let m = document.getElementById('pilihMapel').value;
+        hapusSemuaJawabanLokal(usernameLogin, k, m);
 
         if (isBlocked) {
             document.getElementById('teksStatusSukses').innerHTML = "<span class='text-danger fw-bold'>Aplikasi terkunci otomatis karena pelanggaran batas keluar layar!</span> Jawaban Anda telah dikirim ke server.";
@@ -554,7 +854,8 @@
             document.getElementById('petunjukStatusSukses').innerText = "Silakan letakkan HP Anda di meja atau tunjukkan halaman ini kepada pengawas ujian sebagai bukti.";
         }
 
-        if(bsCheatModal) bsCheatModal.hide();
+        isCheatModalOpen = false;
+        if (bsCheatModal) bsCheatModal.hide();
         pindahHalaman('suksesPage');
 
         try {
@@ -591,9 +892,10 @@
         let t = document.getElementById('inputToken').value;
 
         const refreshCallback = "handleRefreshSoal_" + Math.floor(Math.random() * 100000);
-        
+
         window[refreshCallback] = function(res) {
-            document.getElementById(refreshCallback).remove();
+            const el = document.getElementById(refreshCallback);
+            if (el) el.remove();
             delete window[refreshCallback];
 
             btn.innerText = "🔄 Refresh Soal";
@@ -605,19 +907,15 @@
             } else if (!res.data || res.data.length === 0) {
                 alert("Data soal kosong atau tidak ditemukan!");
             } else {
-                // Sinkronisasi data utama bankSoal tanpa mengganggu isi LocalStorage jawaban siswa
                 bankSoal = res.data;
-                
-                // Render ulang nomor soal aktif detik ini agar perubahan konten langsung nampak di layar
                 renderSoal();
-                
                 alert("Berhasil menyinkronkan soal terbaru dari guru! Jawaban Anda tetap aman.");
             }
         };
 
         const scriptTag = document.createElement("script");
         scriptTag.id = refreshCallback;
-        scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${k}&mapel=${m}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${refreshCallback}`;
+        scriptTag.src = `${DEPLOY_WEB_APP_URL}?action=apiGetSoal&kelas=${encodeURIComponent(k)}&mapel=${encodeURIComponent(m)}&token=${encodeURIComponent(t)}&username=${encodeURIComponent(usernameLogin)}&password=${encodeURIComponent(passwordLogin)}&prefix=${refreshCallback}`;
 
         scriptTag.onerror = function() {
             btn.innerText = "🔄 Refresh Soal";
